@@ -360,7 +360,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       supabase.from("user_roles").select("role").eq("user_id", au.id),
     ]);
     if (!p || !r?.length || !p.active) {
-      toast.error(L("এই অ্যাকাউন্টের অনুমতি নেই", "This account has no access"));
+      toast.error(
+        p?.status === "pending"
+          ? L("Waiting for Approval — আপনার অ্যাকাউন্ট অনুমোদনের অপেক্ষায় আছে।", "Waiting for Approval — your account is awaiting review.")
+          : p?.status === "rejected"
+            ? L("আপনার নিবন্ধন অনুমোদিত হয়নি।", "Your registration was not approved.")
+            : L("এই অ্যাকাউন্টের অনুমতি নেই", "This account has no access"),
+      );
       await supabase.auth.signOut(); setUser(null); setAuthReady(true); return;
     }
     const role = r[0]!.role as Role;

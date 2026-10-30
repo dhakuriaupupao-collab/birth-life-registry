@@ -44,6 +44,8 @@ This project was built with [Lovable](https://lovable.dev).
 
 In local Vite development only, when Supabase URL/publishable-key settings are absent, the login dialog offers a **Direct Test Login · Health Worker** preview. It uses seeded in-memory data and does not create an authenticated Supabase session or persist changes. This preview is disabled in production builds; real sign-in continues to use the server-validated OTP/password flows.
 
+Staff can request an account from the login dialog's **Sign up** tab as a Health Worker, Gram Police, or UP Administrative Officer. Registration is limited to Manirampur's 17 unions; requests are stored with `profiles.status = 'pending'` and cannot enter the dashboard. The matching union's UP Administrative Officer can approve or reject requests in the **Approval Management** tab. Approval activates the account; field staff then sign in by phone OTP, while administrative officers use their email and password.
+
 The public landing page's bilingual geographic filters provide five levels: division → district → upazila/city corporation → union/municipality → ward. The bundled upazila and local-area catalog is pinned to [iqbalhasandev/bangladesh-geo-json@28ba44c](https://github.com/iqbalhasandev/bangladesh-geo-json/tree/28ba44c344b72cfe4849f2dde75b98393c8316ae), whose union-level source is [SudipMHX/bd-apis](https://github.com/SudipMHX/bd-apis). It contains 8 divisions, 64 districts, 495 upazilas, 4,540 unions, and 328 pourashavas. Twelve city corporations and their ward-number ranges are overlaid in `src/lib/geography.ts`; the source catalog does not provide official city-corporation ward boundaries. Union/municipality ward numbers 1–9 follow the existing registration schema. Upstream MIT and ISC notices are in `src/lib/data/`.
 
 ## Core application modules
@@ -51,6 +53,7 @@ The public landing page's bilingual geographic filters provide five levels: divi
 - `/dashboard` — role-based registration dashboard and module navigation.
 - `/birth-entry` and `/death-entry` — the existing registration forms, available to health workers.
 - `/review-list` — birth/death review tabs, searchable records, CSV export, printing, and administrative completion.
+- `/approval-management` — union-scoped pending staff decisions, available only to UP Administrative Officers.
 - `/correction-log` — super-admin-only field-level audit history; database row-level security and MFA remain authoritative.
 - `/monitoring` — executive compliance monitoring and UNO notice publishing.
 

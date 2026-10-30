@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   admin, clientIp, lockoutMinutes, logAttempt, normalizePhone, origin, publicClient, recentCount, sha256, LIMITS,
 } from "./auth.server";
+import { MONIRAMPUR_STATIONS } from "./monirampur-stations";
 
 type Tokens = { access_token: string; refresh_token: string };
 type Result = { ok: true; tokens: Tokens } | { ok: false; error: string; lockedMinutes?: number };
@@ -25,12 +26,241 @@ export const passwordSignIn = createServerFn({ method: "POST" })
     if (lock) { await logAttempt(id, "password", ip, false, "locked"); return { ok: false, error: "locked", lockedMinutes: lock }; }
     const { data: s, error } = await publicClient().auth.signInWithPassword({ email: data.email, password: data.password });
     if (error || !s.session) { await logAttempt(id, "password", ip, false, error?.code ?? "invalid"); return { ok: false, error: "invalid" }; }
+    const db = await admin();
+    const { data: profile, error: profileError } = await db.from("profiles").select("active, status").eq("id", s.user.id).maybeSingle();
+    if (profileError) {
+      console.error("Could not check sign-in approval status", profileError.message);
+      return { ok: false, error: "unavailable" };
+    }
+    if (profile?.status === "pending") {
+      await logAttempt(id, "password", ip, false, "pending_approval");
+      return { ok: false, error: "pending" };
+    }
+    if (profile?.status === "rejected") {
+      await logAttempt(id, "password", ip, false, "rejected");
+      return { ok: false, error: "rejected" };
+    }
+    if (!profile?.active || profile.status !== "active") {
+      await logAttempt(id, "password", ip, false, "inactive");
+      return { ok: false, error: "invalid" };
+    }
     const roles = await rolesOf(s.user.id);
     if (!roles.some((r) => (PRIV as readonly string[]).includes(r))) {
       await logAttempt(id, "password", ip, false, "role"); return { ok: false, error: "invalid" };
     }
     await logAttempt(id, "password", ip, true);
     return { ok: true, tokens: { access_token: s.session.access_token, refresh_token: s.session.refresh_token } };
+  });
+
+/* ---------- Public staff registration (accounts remain disabled until union approval) ---------- */
+export const registerStaff = createServerFn({ method: "POST" })
+  .validator((d) => z.object({
+    name: z.string().trim().min(1).max(100),
+    contact: z.string().trim().max(255),
+    role: z.enum(["worker", "police", "admin"]),
+    unionId: z.string().min(1).max(64),
+    password: z.string().min(8).max(128).optional(),
+  }).parse(d))
+  .handler(async ({ data }) => {
+    const isFieldRole = data.role === "worker" || data.role === "police";
+    const phone = isFieldRole ? normalizePhone(data.contact) : null;
+    let email: string | null = null;
+    if (isFieldRole && !phone) return { ok: false as const, error: "bad_phone" };
+    if (!isFieldRole) {
+      const parsedEmail = z.string().trim().toLowerCase().email().max(255).safeParse(data.contact);
+      if (!parsedEmail.success || !data.password) return { ok: false as const, error: "bad_email" };
+      email = parsedEmail.data;
+    }
+
+    const identifier = phone ? `phone:${phone}` : `email:${email ?? ""}`;
+    const ip = clientIp();
+    const lock = await lockoutMinutes(identifier, ip);
+    if (lock) return { ok: false as const, error: "locked", lockedMinutes: lock };
+    if ((await recentCount(identifier, "signup", 60)) >= 3) {
+      return { ok: false as const, error: "too_many", lockedMinutes: 60 };
+    }
+
+    const union = MONIRAMPUR_STATIONS.find((station) => station.id === data.unionId && station.type === "union");
+    if (!union) return { ok: false as const, error: "bad_union" };
+
+    const db = await admin();
+    const { data: upazila, error: upazilaError } = await db.from("upazilas").select("unions").eq("id", "manirampur").maybeSingle();
+    if (upazilaError) {
+      console.error("Could not validate registration union", upazilaError.message);
+      return { ok: false as const, error: "unavailable" };
+    }
+    if (!upazila || !(upazila.unions as { id?: string }[]).some((item) => item.id === data.unionId)) {
+      return { ok: false as const, error: "bad_union" };
+    }
+
+    const created = isFieldRole
+      ? await db.auth.admin.createUser({ phone: phone!, phone_confirm: false })
+      : await db.auth.admin.createUser({
+          email: email!,
+          password: data.password!,
+          email_confirm: true,
+        });
+    if (created.error || !created.data.user) {
+      await logAttempt(identifier, "signup", ip, false, created.error?.code ?? "create_failed");
+      if (created.error?.code === "email_exists" || created.error?.code === "phone_exists") {
+        return { ok: false as const, error: "already_registered" };
+      }
+      console.error("Staff registration account creation failed", created.error?.message);
+      return { ok: false as const, error: "registration_failed" };
+    }
+
+    const userId = created.data.user.id;
+    const { error: profileError } = await db.from("profiles").insert({
+      id: userId,
+      name_bn: data.name,
+      name_en: data.name,
+      mobile: phone,
+      email,
+      upazila_id: "manirampur",
+      union_id: data.unionId,
+      ward: isFieldRole ? 1 : null,
+      active: false,
+      status: "pending",
+    });
+    if (profileError) {
+      const { error: cleanupError } = await db.auth.admin.deleteUser(userId);
+      if (cleanupError) console.error("Could not remove incomplete staff registration", cleanupError.message);
+      console.error("Staff registration profile creation failed", profileError.message);
+      await logAttempt(identifier, "signup", ip, false, "profile_failed");
+      return { ok: false as const, error: "registration_failed" };
+    }
+
+    const { error: roleError } = await db.from("user_roles").insert({ user_id: userId, role: data.role });
+    if (roleError) {
+      const { error: cleanupError } = await db.auth.admin.deleteUser(userId);
+      if (cleanupError) console.error("Could not remove incomplete staff registration", cleanupError.message);
+      console.error("Staff registration role creation failed", roleError.message);
+      await logAttempt(identifier, "signup", ip, false, "role_failed");
+      return { ok: false as const, error: "registration_failed" };
+    }
+
+    await logAttempt(identifier, "signup", ip, true);
+    return { ok: true as const };
+  });
+
+/* ---------- Union-scoped account approval (UP Administrative Officer only) ---------- */
+export const listPendingStaff = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    if ((context.claims as { aal?: string }).aal !== "aal2") {
+      return { ok: false as const, error: "mfa_required" };
+    }
+    const { data: roles, error: rolesError } = await context.supabase
+      .from("user_roles").select("role").eq("user_id", context.userId);
+    if (rolesError) {
+      console.error("Could not verify approval-management role", rolesError.message);
+      return { ok: false as const, error: "unavailable" };
+    }
+    if (!(roles ?? []).some((item) => item.role === "admin") || (roles ?? []).some((item) => item.role !== "admin")) {
+      return { ok: false as const, error: "forbidden" };
+    }
+
+    const db = await admin();
+    const { data: officer, error: officerError } = await db.from("profiles")
+      .select("active, status, upazila_id, union_id").eq("id", context.userId).maybeSingle();
+    if (officerError) {
+      console.error("Could not load approval officer scope", officerError.message);
+      return { ok: false as const, error: "unavailable" };
+    }
+    if (!officer?.active || officer.status !== "active" || !officer.upazila_id || !officer.union_id) {
+      return { ok: false as const, error: "forbidden" };
+    }
+
+    const { data: profiles, error: pendingError } = await db.from("profiles")
+      .select("id, name_bn, name_en, email, mobile, created_at")
+      .eq("status", "pending")
+      .eq("upazila_id", officer.upazila_id)
+      .eq("union_id", officer.union_id)
+      .order("created_at", { ascending: true });
+    if (pendingError) {
+      console.error("Could not load pending staff registrations", pendingError.message);
+      return { ok: false as const, error: "unavailable" };
+    }
+    if (!profiles?.length) return { ok: true as const, applicants: [] };
+
+    const { data: applicantRoles, error: applicantRolesError } = await db.from("user_roles")
+      .select("user_id, role").in("user_id", profiles.map((profile) => profile.id));
+    if (applicantRolesError) {
+      console.error("Could not load pending applicant roles", applicantRolesError.message);
+      return { ok: false as const, error: "unavailable" };
+    }
+    const applicants = profiles.flatMap((profile) => {
+      const role = applicantRoles?.find((item) => item.user_id === profile.id)?.role;
+      if (role !== "worker" && role !== "police" && role !== "admin") return [];
+      return [{
+        id: profile.id,
+        nameBn: profile.name_bn,
+        nameEn: profile.name_en,
+        email: profile.email,
+        mobile: profile.mobile,
+        role,
+        createdAt: profile.created_at,
+      }];
+    });
+    return { ok: true as const, applicants };
+  });
+
+export const reviewStaffRegistration = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d) => z.object({
+    userId: z.string().uuid(),
+    decision: z.enum(["approve", "reject"]),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    if ((context.claims as { aal?: string }).aal !== "aal2") {
+      return { ok: false as const, error: "mfa_required" };
+    }
+    const { data: roles, error: rolesError } = await context.supabase
+      .from("user_roles").select("role").eq("user_id", context.userId);
+    if (rolesError) {
+      console.error("Could not verify approval-management role", rolesError.message);
+      return { ok: false as const, error: "unavailable" };
+    }
+    if (!(roles ?? []).some((item) => item.role === "admin") || (roles ?? []).some((item) => item.role !== "admin")) {
+      return { ok: false as const, error: "forbidden" };
+    }
+
+    const db = await admin();
+    const { data: officer, error: officerError } = await db.from("profiles")
+      .select("active, status, upazila_id, union_id").eq("id", context.userId).maybeSingle();
+    if (officerError) {
+      console.error("Could not load approval officer scope", officerError.message);
+      return { ok: false as const, error: "unavailable" };
+    }
+    if (!officer?.active || officer.status !== "active" || !officer.upazila_id || !officer.union_id) {
+      return { ok: false as const, error: "forbidden" };
+    }
+
+    const status = data.decision === "approve" ? "active" : "rejected";
+    const { data: updated, error: updateError } = await db.from("profiles")
+      .update({ status, active: data.decision === "approve" })
+      .eq("id", data.userId)
+      .eq("status", "pending")
+      .eq("upazila_id", officer.upazila_id)
+      .eq("union_id", officer.union_id)
+      .select("id")
+      .maybeSingle();
+    if (updateError) {
+      console.error("Could not update staff approval status", updateError.message);
+      return { ok: false as const, error: "unavailable" };
+    }
+    if (!updated) return { ok: false as const, error: "not_pending_or_forbidden" };
+
+    const { error: auditError } = await db.from("audit_logs").insert({
+      user_id: context.userId,
+      action: `staff:${data.decision}`,
+      details: { target_user: data.userId },
+    });
+    if (auditError) {
+      console.error("Staff approval changed but audit logging failed", auditError.message);
+      return { ok: true as const, warning: "audit_failed" };
+    }
+    return { ok: true as const };
   });
 
 /* ---------- Phone OTP (field staff) ---------- */
@@ -46,7 +276,16 @@ export const sendPhoneOtp = createServerFn({ method: "POST" })
     await logAttempt(id, "otp_send", ip, true);
     // Only existing field-staff accounts receive codes; response is identical either way (no account enumeration).
     const db = await admin();
-    const { data: prof } = await db.from("profiles").select("id, active").eq("mobile", phone).maybeSingle();
+    const { data: prof, error: profileError } = await db.from("profiles")
+      .select("id, active, status").eq("mobile", phone).maybeSingle();
+    if (profileError) {
+      console.error("Could not check phone sign-in approval status", profileError.message);
+      return { ok: false, error: "unavailable" };
+    }
+    if (prof && !prof.active) {
+      if (prof.status === "pending") return { ok: false, error: "pending" };
+      if (prof.status === "rejected") return { ok: false, error: "rejected" };
+    }
     if (prof?.active) {
       const roles = await rolesOf(prof.id);
       if (roles.includes("worker") || roles.includes("police")) {
@@ -66,7 +305,25 @@ export const verifyPhoneOtp = createServerFn({ method: "POST" })
     const lock = await lockoutMinutes(id, ip);
     if (lock) { await logAttempt(id, "otp_verify", ip, false, "locked"); return { ok: false, error: "locked", lockedMinutes: lock }; }
     const { data: s, error } = await publicClient().auth.verifyOtp({ phone, token: data.code, type: "sms" });
-    if (error || !s.session) { await logAttempt(id, "otp_verify", ip, false, error?.code ?? "invalid"); return { ok: false, error: "invalid" }; }
+    if (error || !s.session || !s.user) { await logAttempt(id, "otp_verify", ip, false, error?.code ?? "invalid"); return { ok: false, error: "invalid" }; }
+    const db = await admin();
+    const { data: profile, error: profileError } = await db.from("profiles").select("active, status").eq("id", s.user.id).maybeSingle();
+    if (profileError) {
+      console.error("Could not check OTP approval status", profileError.message);
+      return { ok: false, error: "unavailable" };
+    }
+    if (profile?.status === "pending") {
+      await logAttempt(id, "otp_verify", ip, false, "pending_approval");
+      return { ok: false, error: "pending" };
+    }
+    if (profile?.status === "rejected") {
+      await logAttempt(id, "otp_verify", ip, false, "rejected");
+      return { ok: false, error: "rejected" };
+    }
+    if (!profile?.active || profile.status !== "active") {
+      await logAttempt(id, "otp_verify", ip, false, "inactive");
+      return { ok: false, error: "invalid" };
+    }
     await logAttempt(id, "otp_verify", ip, true);
     return { ok: true, tokens: { access_token: s.session.access_token, refresh_token: s.session.refresh_token } };
   });

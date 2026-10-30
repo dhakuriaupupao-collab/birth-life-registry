@@ -452,6 +452,7 @@ export type Database = {
           mobile: string | null
           name_bn: string
           name_en: string
+          status: "pending" | "active" | "rejected"
           station_id: string | null
           union_id: string | null
           upazila_id: string | null
@@ -466,6 +467,7 @@ export type Database = {
           mobile?: string | null
           name_bn: string
           name_en: string
+          status?: "pending" | "active" | "rejected"
           station_id?: string | null
           union_id?: string | null
           upazila_id?: string | null
@@ -480,6 +482,7 @@ export type Database = {
           mobile?: string | null
           name_bn?: string
           name_en?: string
+          status?: "pending" | "active" | "rejected"
           station_id?: string | null
           union_id?: string | null
           upazila_id?: string | null

@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AnnouncementsRouteImport } from './routes/announcements'
+import { Route as ApprovalManagementRouteImport } from './routes/approval-management'
 import { Route as BirthEntryRouteImport } from './routes/birth-entry'
 import { Route as BirthRegistrationRouteImport } from './routes/birth-registration'
 import { Route as CorrectionLogRouteImport } from './routes/correction-log'
@@ -35,6 +36,11 @@ const IndexRoute = IndexRouteImport.update({
 const AnnouncementsRoute = AnnouncementsRouteImport.update({
   id: '/announcements',
   path: '/announcements',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApprovalManagementRoute = ApprovalManagementRouteImport.update({
+  id: '/approval-management',
+  path: '/approval-management',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BirthEntryRoute = BirthEntryRouteImport.update({
@@ -116,6 +122,7 @@ const WorkerApplicationsTypeRoute = WorkerApplicationsTypeRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/announcements': typeof AnnouncementsRoute
+  '/approval-management': typeof ApprovalManagementRoute
   '/birth-entry': typeof BirthEntryRoute
   '/birth-registration': typeof BirthRegistrationRoute
   '/correction-log': typeof CorrectionLogRoute
@@ -135,6 +142,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/announcements': typeof AnnouncementsRoute
+  '/approval-management': typeof ApprovalManagementRoute
   '/birth-entry': typeof BirthEntryRoute
   '/birth-registration': typeof BirthRegistrationRoute
   '/correction-log': typeof CorrectionLogRoute
@@ -155,6 +163,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/announcements': typeof AnnouncementsRoute
+  '/approval-management': typeof ApprovalManagementRoute
   '/birth-entry': typeof BirthEntryRoute
   '/birth-registration': typeof BirthRegistrationRoute
   '/correction-log': typeof CorrectionLogRoute
@@ -176,6 +185,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/announcements'
+    | '/approval-management'
     | '/birth-entry'
     | '/birth-registration'
     | '/correction-log'
@@ -195,6 +205,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/announcements'
+    | '/approval-management'
     | '/birth-entry'
     | '/birth-registration'
     | '/correction-log'
@@ -214,6 +225,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/announcements'
+    | '/approval-management'
     | '/birth-entry'
     | '/birth-registration'
     | '/correction-log'
@@ -234,6 +246,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnnouncementsRoute: typeof AnnouncementsRoute
+  ApprovalManagementRoute: typeof ApprovalManagementRoute
   BirthEntryRoute: typeof BirthEntryRoute
   BirthRegistrationRoute: typeof BirthRegistrationRoute
   CorrectionLogRoute: typeof CorrectionLogRoute
@@ -264,6 +277,13 @@ declare module '@tanstack/react-router' {
       path: '/announcements'
       fullPath: '/announcements'
       preLoaderRoute: typeof AnnouncementsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/approval-management': {
+      id: '/approval-management'
+      path: '/approval-management'
+      fullPath: '/approval-management'
+      preLoaderRoute: typeof ApprovalManagementRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/birth-entry': {
@@ -389,6 +409,7 @@ const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnnouncementsRoute: AnnouncementsRoute,
+  ApprovalManagementRoute: ApprovalManagementRoute,
   BirthEntryRoute: BirthEntryRoute,
   BirthRegistrationRoute: BirthRegistrationRoute,
   CorrectionLogRoute: CorrectionLogRoute,

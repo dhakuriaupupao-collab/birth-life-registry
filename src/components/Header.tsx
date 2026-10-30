@@ -30,7 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { roleLabel, useApp } from "@/lib/store";
-import { getStationsForUpazila } from "@/lib/monirampur-stations";
+import { getStationsForUpazila, MONIRAMPUR_STATIONS } from "@/lib/monirampur-stations";
 import {
   EXECUTIVE_PREVIEW_ROLES,
   isPreviewRole,
@@ -39,7 +39,7 @@ import {
 } from "@/lib/dashboard-roles";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
-import { passwordSignIn, requestPasswordReset, sendPhoneOtp, verifyPhoneOtp } from "@/lib/auth.functions";
+import { passwordSignIn, registerStaff, requestPasswordReset, sendPhoneOtp, verifyPhoneOtp } from "@/lib/auth.functions";
 
 export function Header() {
   const {
@@ -449,16 +449,30 @@ export function LoginDialog({ open, onClose }: { open: boolean; onClose: () => v
   const nav = useNavigate();
   const sendOtp = useServerFn(sendPhoneOtp), verifyOtp = useServerFn(verifyPhoneOtp);
   const pwSignIn = useServerFn(passwordSignIn), reset = useServerFn(requestPasswordReset);
+  const register = useServerFn(registerStaff);
   const [mobile, setMobile] = useState(""); const [otp, setOtp] = useState(""); const [sent, setSent] = useState(false);
   const [email, setEmail] = useState(""); const [pw, setPw] = useState(""); const [forgot, setForgot] = useState(false);
+  const [loginMessage, setLoginMessage] = useState<"pending" | "rejected" | null>(null);
+  const [signupName, setSignupName] = useState("");
+  const [signupContact, setSignupContact] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+  const [signupRole, setSignupRole] = useState<"worker" | "police" | "admin">("worker");
+  const [signupUnion, setSignupUnion] = useState("");
+  const [signupMessage, setSignupMessage] = useState<"submitted" | null>(null);
   const [busy, setBusy] = useState(false);
 
   const fail = (r: { error?: string; lockedMinutes?: number }) => {
-    if (r.error === "locked" || r.error === "too_many")
+    if (r.error === "pending") {
+      setLoginMessage("pending");
+    } else if (r.error === "rejected") {
+      setLoginMessage("rejected");
+    } else if (r.error === "locked" || r.error === "too_many")
       toast.error(L(`অনেকবার চেষ্টা করা হয়েছে। ${n(r.lockedMinutes ?? 15)} মিনিট পর আবার চেষ্টা করুন`, `Too many attempts. Try again in ${r.lockedMinutes ?? 15} minutes`));
     else if (r.error === "bad_phone") toast.error(L("সঠিক মোবাইল নম্বর দিন (01XXXXXXXXX)", "Enter a valid mobile number (01XXXXXXXXX)"));
     else if (r.error === "sms_failed") toast.error(L("SMS পাঠানো যায়নি, পরে চেষ্টা করুন", "Could not send SMS, try later"));
-    else toast.error(L("তথ্য সঠিক নয়", "Details are incorrect"));
+    else toast.error(r.error === "unavailable"
+      ? L("সেবা সাময়িকভাবে অনুপলব্ধ, পরে চেষ্টা করুন", "The service is temporarily unavailable; try again later")
+      : L("তথ্য সঠিক নয়", "Details are incorrect"));
   };
   const done = async (tokens: { access_token: string; refresh_token: string }) => {
     const { error } = await supabase.auth.setSession(tokens);
@@ -481,10 +495,18 @@ export function LoginDialog({ open, onClose }: { open: boolean; onClose: () => v
           <DialogDescription>{L("আপনার ভূমিকা অনুযায়ী ড্যাশবোর্ড স্বয়ংক্রিয়ভাবে খুলবে", "Your role-specific dashboard opens automatically")}</DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="otp">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="otp">{L("মোবাইল ও OTP", "Mobile & OTP")}</TabsTrigger>
             <TabsTrigger value="pw">{L("পাসওয়ার্ড", "Password")}</TabsTrigger>
+            <TabsTrigger value="signup">{L("নিবন্ধন", "Sign up")}</TabsTrigger>
           </TabsList>
+          {loginMessage && (
+            <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950" role="status" aria-live="polite">
+              {loginMessage === "pending"
+                ? L("Waiting for Approval — আপনার অ্যাকাউন্ট অনুমোদনের অপেক্ষায় আছে।", "Waiting for Approval — your account is awaiting review.")
+                : L("আপনার নিবন্ধন অনুমোদিত হয়নি।", "Your registration was not approved.")}
+            </div>
+          )}
           <TabsContent value="otp" className="space-y-3 pt-2">
             <p className="text-xs text-muted-foreground">{L("স্বাস্থ্যকর্মী ও গ্রাম পুলিশের জন্য", "For Health Workers & Village Police")}</p>
             {demoLoginAvailable && (
@@ -504,6 +526,7 @@ export function LoginDialog({ open, onClose }: { open: boolean; onClose: () => v
             </>) : <>
               <Button className="w-full" disabled={demoLoginAvailable || busy || mobile.length !== 11} onClick={() => {
                 void run(async () => {
+                  setLoginMessage(null);
                   const r = await sendOtp({ data: { mobile } });
                   if (r.ok) {
                     setSent(true);
@@ -547,10 +570,107 @@ export function LoginDialog({ open, onClose }: { open: boolean; onClose: () => v
               <Label>{L("পাসওয়ার্ড", "Password")}</Label>
               <Input type="password" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
               <Button className="w-full" disabled={busy || !email || !pw} onClick={() => run(async () => {
+                setLoginMessage(null);
                 const r = await pwSignIn({ data: { email, password: pw } }); if (r.ok) await done(r.tokens); else fail(r);
               })}>{L("লগইন", "Login")}</Button>
               <button className="text-sm text-primary underline" onClick={() => setForgot(true)}>{L("পাসওয়ার্ড ভুলে গেছেন?", "Forgot password?")}</button>
             </>)}
+          </TabsContent>
+          <TabsContent value="signup" className="space-y-3 pt-2">
+            {signupMessage ? (
+              <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-950" role="status" aria-live="polite">
+                <p className="font-semibold">{L("Waiting for Approval", "Waiting for Approval")}</p>
+                <p className="mt-1">{L("আপনার নিবন্ধন জমা হয়েছে। ইউপি প্রশাসনিক কর্মকর্তা অনুমোদন করলে লগইন করতে পারবেন।", "Your registration was submitted. You can sign in after your UP Administrative Officer approves it.")}</p>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  {L("স্বাস্থ্যকর্মী, গ্রাম পুলিশ বা ইউপি প্রশাসনিক কর্মকর্তা হিসেবে নিবন্ধন করুন", "Register as a Health Worker, Gram Police, or UP Administrative Officer")}
+                </p>
+                <div className="space-y-1.5">
+                  <Label>{L("নাম", "Name")}</Label>
+                  <Input autoComplete="name" maxLength={100} value={signupName} onChange={(event) => setSignupName(event.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{L("ভূমিকা", "Role")}</Label>
+                  <Select value={signupRole} onValueChange={(value) => {
+                    if (value === "worker" || value === "police" || value === "admin") setSignupRole(value);
+                  }}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="worker">{L("স্বাস্থ্যকর্মী", "Health Worker")}</SelectItem>
+                      <SelectItem value="police">{L("গ্রাম পুলিশ", "Gram Police")}</SelectItem>
+                      <SelectItem value="admin">{L("ইউপি প্রশাসনিক কর্মকর্তা", "UP Administrative Officer")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{L("ইউনিয়ন", "Union")}</Label>
+                  <Select value={signupUnion} onValueChange={setSignupUnion}>
+                    <SelectTrigger><SelectValue placeholder={L("ইউনিয়ন বেছে নিন", "Select a union")} /></SelectTrigger>
+                    <SelectContent>
+                      {MONIRAMPUR_STATIONS.filter((station) => station.type === "union").map((station) => (
+                        <SelectItem key={station.id} value={station.id}>{L(station.bn, station.en)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{signupRole === "admin" ? L("ইমেইল", "Email") : L("মোবাইল নম্বর", "Mobile number")}</Label>
+                  <Input
+                    type={signupRole === "admin" ? "email" : "tel"}
+                    inputMode={signupRole === "admin" ? "email" : "numeric"}
+                    autoComplete={signupRole === "admin" ? "email" : "tel"}
+                    maxLength={signupRole === "admin" ? 255 : 20}
+                    value={signupContact}
+                    onChange={(event) => setSignupContact(event.target.value)}
+                    placeholder={signupRole === "admin" ? "name@example.com" : "017XXXXXXXX"}
+                  />
+                </div>
+                {signupRole === "admin" && (
+                  <div className="space-y-1.5">
+                    <Label>{L("পাসওয়ার্ড", "Password")}</Label>
+                    <Input type="password" autoComplete="new-password" minLength={8} maxLength={128} value={signupPassword} onChange={(event) => setSignupPassword(event.target.value)} />
+                  </div>
+                )}
+                <Button
+                  className="w-full"
+                  disabled={busy || !signupName.trim() || !signupContact.trim() || !signupUnion || (signupRole === "admin" && signupPassword.length < 8)}
+                  onClick={() => run(async () => {
+                    const result = await register({
+                      data: {
+                        name: signupName,
+                        contact: signupContact,
+                        role: signupRole,
+                        unionId: signupUnion,
+                        ...(signupRole === "admin" ? { password: signupPassword } : {}),
+                      },
+                    });
+                    if (result.ok) {
+                      setSignupMessage("submitted");
+                    } else {
+                      if (result.error === "locked" || result.error === "too_many") {
+                        fail(result);
+                      } else if (result.error === "bad_phone") {
+                        toast.error(L("সঠিক মোবাইল নম্বর দিন (01XXXXXXXXX)", "Enter a valid mobile number (01XXXXXXXXX)"));
+                      } else if (result.error === "already_registered") {
+                        toast.error(L("এই যোগাযোগের তথ্য দিয়ে ইতিমধ্যে নিবন্ধন করা হয়েছে", "An account already exists for this contact"));
+                      } else if (result.error === "bad_union") {
+                        toast.error(L("বৈধ ইউনিয়ন নির্বাচন করুন", "Select a valid union"));
+                      } else if (result.error === "bad_email") {
+                        toast.error(L("সঠিক ইমেইল ও কমপক্ষে ৮ অক্ষরের পাসওয়ার্ড দিন", "Enter a valid email and a password of at least 8 characters"));
+                      } else if (result.error === "registration_failed") {
+                        toast.error(L("নিবন্ধন সম্পন্ন হয়নি, আবার চেষ্টা করুন", "Registration could not be completed; please try again"));
+                      } else {
+                        toast.error(L("সেবা সাময়িকভাবে অনুপলব্ধ, পরে চেষ্টা করুন", "The service is temporarily unavailable; try again later"));
+                      }
+                    }
+                  })}
+                >
+                  {L("নিবন্ধনের অনুরোধ জমা দিন", "Submit registration")}
+                </Button>
+              </>
+            )}
           </TabsContent>
         </Tabs>
         {demoLoginAvailable && (
