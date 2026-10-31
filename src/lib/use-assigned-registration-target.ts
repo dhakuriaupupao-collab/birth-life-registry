@@ -2,27 +2,16 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { getDhakaMonthYear } from "@/lib/monthly-targets";
-import {
-  DEMO_REGISTRATION_TARGETS_UPDATED_EVENT,
-  getDemoTargetsStorageKey,
-  readDemoRegistrationTargets,
-} from "@/lib/registration-targets";
-import { loadAssignedStationRegistrationTarget } from "@/lib/registration-targets.functions";
-import {
-  readStationLocalMetrics,
-  STATION_METRICS_UPDATED_EVENT,
-} from "@/lib/station-local-metrics";
 import { useApp } from "@/lib/store";
-import type { RegCase } from "@/lib/types";
 
-type CaseCounts = {
+export type CaseCounts = {
   pending: number;
   progress: number;
   completed: number;
   total: number;
 };
 
-type StationMonthlyMetrics = {
+export type StationMonthlyMetrics = {
   target: {
     unionId: string;
     monthYear: string;
@@ -35,56 +24,13 @@ type StationMonthlyMetrics = {
   };
 };
 
-function monthKey(date: Date) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Dhaka",
-    year: "numeric",
-    month: "2-digit",
-  }).format(date);
-}
-
-function countStationCases(
-  cases: RegCase[],
-  upazilaId: string,
-  stationId: string,
-  monthYear: string,
-) {
-  const counts: StationMonthlyMetrics["counts"] = {
-    birth: { pending: 0, progress: 0, completed: 0, total: 0 },
-    death: { pending: 0, progress: 0, completed: 0, total: 0 },
-  };
-  const targetMonth = monthYear.slice(0, 7);
-  for (const item of cases) {
-    if (
-      item.upazilaId !== upazilaId ||
-      (item.stationId ?? item.unionId) !== stationId
-    ) continue;
-
-    const typeCounts = counts[item.type];
-    if (
-      item.status === "completed" &&
-      (item.completedAt
-        ? monthKey(new Date(item.completedAt)) === targetMonth
-        : monthKey(new Date(item.createdAt)) === targetMonth)
-    ) {
-      typeCounts.completed += 1;
-    }
-    if (monthKey(new Date(item.createdAt)) !== targetMonth) continue;
-    typeCounts.total += 1;
-    if (item.status === "pending" || item.status === "progress") {
-      typeCounts[item.status] += 1;
-    }
-  }
-  return counts;
-}
-
 export function useAssignedRegistrationTarget(): StationMonthlyMetrics | null {
-  const { L, user, demoMode, state } = useApp();
+  const { L, user, demoMode } = useApp();
   const [metrics, setMetrics] = useState<StationMonthlyMetrics | null>(null);
 
   useEffect(() => {
     const stationId = user?.stationId ?? user?.unionId;
-    if (!user || !["admin", "worker", "police"].includes(user.role) || !stationId) {
+    if (!user || !["admin", "worker", "police"].includes(user.role) || !stationId || demoMode) {
       setMetrics(null);
       return;
     }
@@ -94,30 +40,6 @@ export function useAssignedRegistrationTarget(): StationMonthlyMetrics | null {
     const monthYear = getDhakaMonthYear();
     const refresh = async () => {
       try {
-        if (demoMode) {
-          const saved = readDemoRegistrationTargets(user.upazilaId, monthYear)
-            .find((item) => item.union_id === stationId && item.status === "submitted");
-          if (active) {
-            const local = readStationLocalMetrics(user.upazilaId, stationId, monthYear);
-            const counts = countStationCases(state.cases, user.upazilaId, stationId, monthYear);
-            const localCompleted = local.completedCount;
-            if (localCompleted !== undefined) {
-              counts.birth.completed = local.birthCompletedCount ?? localCompleted;
-              counts.death.completed = local.deathCompletedCount ?? Math.max(0, localCompleted - counts.birth.completed);
-            }
-            setMetrics({
-              target: saved || local.birthTarget !== undefined || local.deathTarget !== undefined ? {
-                unionId: stationId,
-                monthYear,
-                birth: local.birthTarget ?? saved?.birth_target ?? 0,
-                death: local.deathTarget ?? saved?.death_target ?? 0,
-              } : null,
-              counts,
-            });
-          }
-          return;
-        }
-
         const { data, error } = await supabase.rpc("station_monthly_dashboard_metrics", {
           _month_year: monthYear,
         });
@@ -125,29 +47,24 @@ export function useAssignedRegistrationTarget(): StationMonthlyMetrics | null {
         const row = data?.[0];
         if (!row) throw new Error("Station monthly metrics were not returned");
         if (active) {
-          const local = readStationLocalMetrics(user.upazilaId, stationId, monthYear);
-          const birth = {
+          const birth: CaseCounts = {
             pending: row.birth_pending_count,
             progress: row.birth_progress_count,
             completed: row.birth_completed_count,
             total: row.birth_total_count,
           };
-          const death = {
+          const death: CaseCounts = {
             pending: row.death_pending_count,
             progress: row.death_progress_count,
             completed: row.death_completed_count,
             total: row.death_total_count,
           };
-          if (local.completedCount !== undefined) {
-            birth.completed = local.birthCompletedCount ?? local.completedCount;
-            death.completed = local.deathCompletedCount ?? Math.max(0, local.completedCount - birth.completed);
-          }
           setMetrics({
-            target: row.target_present || local.birthTarget !== undefined || local.deathTarget !== undefined ? {
+            target: row.target_present ? {
               unionId: stationId,
               monthYear,
-              birth: local.birthTarget ?? row.birth_target,
-              death: local.deathTarget ?? row.death_target,
+              birth: row.birth_target,
+              death: row.death_target,
             } : null,
             counts: { birth, death },
           });
@@ -161,22 +78,6 @@ export function useAssignedRegistrationTarget(): StationMonthlyMetrics | null {
 
     setMetrics(null);
     void refresh();
-
-    if (demoMode) {
-      const onTargetsUpdated = () => void refresh();
-      const onStorage = (event: StorageEvent) => {
-        if (event.key === getDemoTargetsStorageKey(user.upazilaId, monthYear)) onTargetsUpdated();
-      };
-      window.addEventListener("storage", onStorage);
-      window.addEventListener(DEMO_REGISTRATION_TARGETS_UPDATED_EVENT, onTargetsUpdated);
-      window.addEventListener(STATION_METRICS_UPDATED_EVENT, onTargetsUpdated);
-      return () => {
-        active = false;
-        window.removeEventListener("storage", onStorage);
-        window.removeEventListener(DEMO_REGISTRATION_TARGETS_UPDATED_EVENT, onTargetsUpdated);
-        window.removeEventListener(STATION_METRICS_UPDATED_EVENT, onTargetsUpdated);
-      };
-    }
 
     const refreshOnChange = () => {
       if (refreshTimer) clearTimeout(refreshTimer);
@@ -221,26 +122,12 @@ export function useAssignedRegistrationTarget(): StationMonthlyMetrics | null {
         }
       });
 
-    const onLocalMetricsUpdated = (event: Event) => {
-      const detail = (event as CustomEvent<{ upazilaId?: string; stationId?: string; monthYear?: string }>).detail;
-      if (detail?.upazilaId === user.upazilaId && detail?.stationId === stationId && detail?.monthYear === monthYear) {
-        refreshOnChange();
-      }
-    };
-    const onStorage = (event: StorageEvent) => {
-      if (event.key?.includes(`station-global-metrics:${user.upazilaId}:${stationId}:${monthYear}`)) refreshOnChange();
-    };
-    window.addEventListener(STATION_METRICS_UPDATED_EVENT, onLocalMetricsUpdated);
-    window.addEventListener("storage", onStorage);
-
     return () => {
       active = false;
       if (refreshTimer) clearTimeout(refreshTimer);
-      window.removeEventListener(STATION_METRICS_UPDATED_EVENT, onLocalMetricsUpdated);
-      window.removeEventListener("storage", onStorage);
       void supabase.removeChannel(channel);
     };
-  }, [L, demoMode, state.cases, user]);
+  }, [L, demoMode, user]);
 
   return metrics;
 }

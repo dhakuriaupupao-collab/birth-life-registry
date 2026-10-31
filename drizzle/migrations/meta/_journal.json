@@ -211,6 +211,20 @@
       "when": 1793366600000,
       "tag": "0029_staff_approval_status",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793366700000,
+      "tag": "0030_public_staff_signup",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793366800000,
+      "tag": "0031_staff_signup_metadata",
+      "breakpoints": true
     }
   ]
 }

@@ -63,7 +63,7 @@ import { downloadCSV, printPDF } from "@/lib/report";
 import { seedState } from "@/lib/seed";
 import { isPolicyReadOnlyRole, type PreviewRole } from "@/lib/dashboard-roles";
 import { simulateJurisdiction } from "@/lib/jurisdiction-simulation";
-import { getDhakaMonthYear } from "@/lib/monthly-targets";
+import { getDhakaMonthYear, getMonthlyStationCaseCounts } from "@/lib/monthly-targets";
 import { useAssignedRegistrationTarget } from "@/lib/use-assigned-registration-target";
 import { getStationsForUpazila, getTargetEntryStations } from "@/lib/monirampur-stations";
 import { readDemoRegistrationTargets } from "@/lib/registration-targets";
@@ -77,6 +77,7 @@ import { BirthRegList } from "@/components/modules/BirthRegList";
 import { DeathRegList } from "@/components/modules/DeathRegList";
 import { AdministrativeErrorBoundary } from "@/components/AdministrativeErrorBoundary";
 import { WardKpiPanel } from "@/components/dashboards/WardKpiPanel";
+import { AssignedUnionHeader } from "@/components/dashboards/AssignedUnionHeader";
 
 type DashboardRole = Role | "public";
 type ActionFilter = "birth" | "death" | "pending" | "progress" | "completed" | "urgent";
@@ -615,8 +616,12 @@ export function RegistrationDashboard({
   initialAction?: "worker-report" | "feedback";
   onActionDismiss?: () => void;
 }) {
-  const { state, L, n, user, demoMode, patchCase, setActiveUnionId } = useApp();
+  const { state, L, n, user, demoMode, activeUnionId, patchCase, setActiveUnionId } = useApp();
   const simulationEnabled = import.meta.env.DEV && simulationRole !== undefined;
+  const isStationSelectorPreview =
+    simulationEnabled &&
+    !user &&
+    (simulationRole === "health_worker" || simulationRole === "village_police");
   const readOnlyPolicyPanel = isPolicyReadOnlyRole(simulationRole);
   const [localPreviewSeed] = useState(seedState);
   const [clientReady, setClientReady] = useState(false);
@@ -629,6 +634,7 @@ export function RegistrationDashboard({
     !user &&
     typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+  const isLocalStationPreview = isLocalAdminPreview || isStationSelectorPreview;
   const navigate = useNavigate();
   const { rows } = useCaseHelpers();
   const [editEntry, setEditEntry] = useState<RegCase | null>(null);
@@ -636,6 +642,28 @@ export function RegistrationDashboard({
     () => readMasterRegCases(localPreviewSeed.cases),
   );
   const [previewStationId, setPreviewStationId] = useState(LOCAL_ADMIN_PREVIEW_STATION_ID);
+  const previewStations = useMemo(
+    () =>
+      getTargetEntryStations(
+        "manirampur",
+        localPreviewSeed.upazilas.find((item) => item.id === "manirampur")?.unions ?? [],
+      ),
+    [localPreviewSeed],
+  );
+  const previewStationCases = useMemo(
+    () => createLocalAdminPreviewCases(masterPreviewCases, previewStationId),
+    [masterPreviewCases, previewStationId],
+  );
+  const previewStationMetrics = useMemo(
+    () =>
+      getMonthlyStationCaseCounts(
+        previewStationCases,
+        "manirampur",
+        previewStationId,
+        getDhakaMonthYear(),
+      ),
+    [previewStationCases, previewStationId],
+  );
   const [localPreviewCases, setLocalPreviewCases] = useState<RegCase[]>(
     () => createLocalAdminPreviewCases(masterPreviewCases, LOCAL_ADMIN_PREVIEW_STATION_ID),
   );
@@ -669,6 +697,14 @@ export function RegistrationDashboard({
   const [adminSignatureProof, setAdminSignatureProof] = useState<File | null>(null);
   const [adminRecords, setAdminRecords] = useState<AdminRecord[]>([]);
   const [adminDraftSaving, setAdminDraftSaving] = useState(false);
+  useEffect(() => {
+    if (!isStationSelectorPreview) return;
+    if (activeUnionId && previewStations.some((station) => station.id === activeUnionId)) {
+      setPreviewStationId(activeUnionId);
+      return;
+    }
+    setActiveUnionId(previewStationId);
+  }, [activeUnionId, isStationSelectorPreview, previewStationId, previewStations, setActiveUnionId]);
   useEffect(() => {
     const refreshMasterCases = (cases: RegCase[] | null) => {
       if (!cases) return;
@@ -729,7 +765,7 @@ export function RegistrationDashboard({
     }
   }, [L, isLocalAdminPreview, previewStationId, user]);
   useEffect(() => {
-    if (!isLocalAdminPreview) {
+    if (!isLocalStationPreview) {
       setLocalPreviewTarget(null);
       return;
     }
@@ -752,7 +788,7 @@ export function RegistrationDashboard({
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, [isLocalAdminPreview, previewStationId]);
+  }, [isLocalStationPreview, previewStationId]);
   useEffect(() => {
     if (initialAction) setActiveCard({ kind: "action", id: initialAction });
   }, [initialAction]);
@@ -818,6 +854,7 @@ export function RegistrationDashboard({
       if (isLocalAdminPreview) {
         return simulationEnabled ? masterPreviewCases : localPreviewCases;
       }
+      if (isStationSelectorPreview) return previewStationCases;
       if (!user) {
         if (simulationEnabled) return masterPreviewCases;
         return roleConfig === "public"
@@ -837,7 +874,7 @@ export function RegistrationDashboard({
       }
       return scopedCases(state, user);
     },
-    [demoMode, isLocalAdminPreview, localPreviewCases, masterPreviewCases, roleConfig, simulationEnabled, state, user],
+    [demoMode, isLocalAdminPreview, isStationSelectorPreview, localPreviewCases, masterPreviewCases, previewStationCases, roleConfig, simulationEnabled, state, user],
   );
   const simulationUpazilas = useMemo(() => {
     if (!simulationEnabled || !user || demoMode || user.role === "super") {
@@ -921,6 +958,8 @@ export function RegistrationDashboard({
         birth: { pending: 0, progress: 0, completed: 0, total: 0 },
         death: { pending: 0, progress: 0, completed: 0, total: 0 },
       }
+    : isStationSelectorPreview
+      ? previewStationMetrics
     : localMonthlyCounts;
   const scopeUpazilaId = user?.upazilaId ?? (isLocalAdminPreview ? "manirampur" : undefined);
   const scopeUnionId = user
@@ -932,10 +971,6 @@ export function RegistrationDashboard({
     ? (isLocalAdminPreview ? localPreviewSeed.upazilas : state.upazilas).find((item) => item.id === scopeUpazilaId)
     : undefined;
   const assignedUnion = assignedUpazila?.unions.find((item) => item.id === scopeUnionId);
-  const previewStations = getTargetEntryStations(
-    "manirampur",
-    localPreviewSeed.upazilas.find((item) => item.id === "manirampur")?.unions ?? [],
-  );
   const scopedUpazilas = (isLocalAdminPreview ? localPreviewSeed.upazilas : state.upazilas).filter((item) => {
     if (!user || user.role === "super") return true;
     if (user.role === "district") return item.districtEn === user.districtId;
@@ -961,7 +996,7 @@ export function RegistrationDashboard({
                   : Math.max(1, selectedUnionCount));
   const targetMonthYear = getDhakaMonthYear();
   const activeUnionTarget =
-    isLocalAdminPreview
+    isLocalStationPreview
       ? localPreviewTarget?.unionId === previewStationId
         ? localPreviewTarget
         : null
@@ -975,13 +1010,16 @@ export function RegistrationDashboard({
   const requiresSubmittedUnionTarget =
     (roleConfig === "admin" || roleConfig === "worker" || roleConfig === "police") &&
     (user?.role === "admin" || user?.role === "worker" || user?.role === "police") &&
-    !demoMode &&
-    !simulationEnabled;
+    (!simulationEnabled || isStationSelectorPreview);
   const monthlyTargets = {
     birth: activeUnionTarget?.birth ??
-      (requiresSubmittedUnionTarget && !isLocalAdminPreview ? 0 : Math.ceil(TARGET.birth * monthlyTargetScale)),
+      (isStationSelectorPreview || requiresSubmittedUnionTarget && !isLocalAdminPreview
+        ? 0
+        : Math.ceil(TARGET.birth * monthlyTargetScale)),
     death: activeUnionTarget?.death ??
-      (requiresSubmittedUnionTarget && !isLocalAdminPreview ? 0 : Math.ceil(TARGET.death * monthlyTargetScale)),
+      (isStationSelectorPreview || requiresSubmittedUnionTarget && !isLocalAdminPreview
+        ? 0
+        : Math.ceil(TARGET.death * monthlyTargetScale)),
   };
   const monthlyTargetWarning =
     usesStationMetrics && !stationMonthlyMetrics
@@ -1046,7 +1084,7 @@ export function RegistrationDashboard({
         );
   const scopeUpazila = state.upazilas.find((item) => item.id === user?.upazilaId);
   const scopeUnion = scopeUpazila?.unions.find((item) => item.id === user?.unionId);
-  const activeStationId = isLocalAdminPreview
+  const activeStationId = isLocalStationPreview
     ? previewStationId
     : user
       ? user.stationId ?? user.unionId
@@ -1455,9 +1493,9 @@ export function RegistrationDashboard({
         </div>
       ) : (
       <div className="mx-auto flex min-h-0 w-full max-w-none flex-1 flex-col gap-1 px-4 py-1 max-[360px]:gap-1 max-[360px]:py-1 sm:gap-1.5 sm:px-6 sm:py-1.5 lg:px-8">
-        {isLocalAdminPreview && (
+        {isLocalStationPreview && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-white/90 px-3 py-2 shadow-sm">
-            <label htmlFor="local-admin-station-switcher" className="text-sm font-bold text-emerald-950">
+            <label htmlFor="preview-station-switcher" className="text-sm font-bold text-emerald-950">
               {L("পরীক্ষার স্টেশন", "Test station")}
             </label>
             <Select
@@ -1465,10 +1503,12 @@ export function RegistrationDashboard({
               onValueChange={(stationId) => {
                 setPreviewStationId(stationId);
                 setActiveUnionId(stationId);
-                setLocalPreviewCases(createLocalAdminPreviewCases(masterPreviewCases, stationId));
+                if (isLocalAdminPreview) {
+                  setLocalPreviewCases(createLocalAdminPreviewCases(masterPreviewCases, stationId));
+                }
               }}
             >
-              <SelectTrigger id="local-admin-station-switcher" className="w-full max-w-sm border-emerald-300 bg-white">
+              <SelectTrigger id="preview-station-switcher" className="ml-auto w-full max-w-sm border-emerald-300 bg-white">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1483,7 +1523,11 @@ export function RegistrationDashboard({
         )}
         <div className="grid min-h-0 flex-1 gap-1 sm:gap-2 lg:grid-cols-[0.72fr_1.28fr] lg:items-center lg:gap-3">
           <div className="flex min-h-0 flex-col justify-center">
-            {unionFullLabel && badgeUnionId ? (
+            {isStationSelectorPreview ? (
+              <AssignedUnionHeader stationId={previewStationId} upazilaId="manirampur" />
+            ) : sharedStationRoleView && user?.role && ["admin", "worker", "police"].includes(user.role) ? (
+              <AssignedUnionHeader stationId={user.stationId ?? user.unionId} upazilaId={user.upazilaId} />
+            ) : unionFullLabel && badgeUnionId ? (
               <p className="mb-1 max-w-3xl text-sm font-extrabold leading-snug text-emerald-950 sm:text-base">
                 {unionFullLabel}
               </p>

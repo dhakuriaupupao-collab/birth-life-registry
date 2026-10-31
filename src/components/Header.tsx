@@ -39,7 +39,13 @@ import {
 } from "@/lib/dashboard-roles";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
-import { passwordSignIn, registerStaff, requestPasswordReset, sendPhoneOtp, verifyPhoneOtp } from "@/lib/auth.functions";
+import {
+  passwordSignIn,
+  registerStaffWithAdminFallback,
+  requestPasswordReset,
+  sendPhoneOtp,
+  verifyPhoneOtp,
+} from "@/lib/auth.functions";
 
 export function Header() {
   const {
@@ -449,7 +455,7 @@ export function LoginDialog({ open, onClose }: { open: boolean; onClose: () => v
   const nav = useNavigate();
   const sendOtp = useServerFn(sendPhoneOtp), verifyOtp = useServerFn(verifyPhoneOtp);
   const pwSignIn = useServerFn(passwordSignIn), reset = useServerFn(requestPasswordReset);
-  const register = useServerFn(registerStaff);
+  const registerWithAdminFallback = useServerFn(registerStaffWithAdminFallback);
   const [mobile, setMobile] = useState(""); const [otp, setOtp] = useState(""); const [sent, setSent] = useState(false);
   const [email, setEmail] = useState(""); const [pw, setPw] = useState(""); const [forgot, setForgot] = useState(false);
   const [loginMessage, setLoginMessage] = useState<"pending" | "rejected" | null>(null);
@@ -486,6 +492,60 @@ export function LoginDialog({ open, onClose }: { open: boolean; onClose: () => v
     nav({ to: "/dashboard" });
   };
   const run = async (f: () => Promise<void>) => { setBusy(true); try { await f(); } finally { setBusy(false); } };
+  const submitWithAdminFallback = async () => {
+    try {
+      const fallback = await registerWithAdminFallback({
+        data: {
+          name: signupName.trim(),
+          contact: signupContact,
+          role: signupRole,
+          unionId: signupUnion,
+          ...(signupRole === "admin" ? { password: signupPassword } : {}),
+        },
+      });
+      if (fallback.ok) {
+        setSignupMessage("submitted");
+        return true;
+      }
+
+      console.error("Admin staff signup fallback failed", {
+        error: fallback.error,
+        message: fallback.message,
+      });
+      const description =
+        fallback.error === "server_configuration"
+          ? L("লোকাল সার্ভারে SUPABASE_URL ও SUPABASE_SERVICE_ROLE_KEY সেট করুন", "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the local server environment")
+          : fallback.error === "confirmation_failed"
+            ? L("নিশ্চিতকরণ ইমেইল পাঠানো যায়নি। সার্ভার লগ দেখুন।", "Could not send the confirmation email. Check the server logs.")
+            : fallback.error === "bad_union"
+              ? L("তালিকা থেকে একটি বৈধ ইউনিয়ন বেছে নিন", "Choose a valid union from the list")
+              : fallback.error === "locked" || fallback.error === "too_many"
+                ? L(`অনেকবার চেষ্টা করা হয়েছে। ${fallback.lockedMinutes ?? 15} মিনিট পর আবার চেষ্টা করুন`, `Too many attempts. Try again in ${fallback.lockedMinutes ?? 15} minutes`)
+                : fallback.error === "already_registered"
+                  ? L("এই যোগাযোগের তথ্য দিয়ে ইতিমধ্যে নিবন্ধন করা হয়েছে", "An account already exists for this contact")
+                  : fallback.error === "bad_phone"
+                    ? L("সঠিক মোবাইল নম্বর দিন (01XXXXXXXXX)", "Enter a valid mobile number (01XXXXXXXXX)")
+                    : fallback.error === "bad_email"
+                      ? L("সঠিক ইমেইল ও কমপক্ষে ৮ অক্ষরের পাসওয়ার্ড দিন", "Enter a valid email and a password of at least 8 characters")
+                      : L("নিবন্ধন সম্পন্ন হয়নি। প্রশাসকের সঙ্গে যোগাযোগ করুন।", "Registration failed. Contact the administrator.");
+      toast.error(
+        fallback.error === "locked" || fallback.error === "too_many"
+          ? L(`অনেকবার চেষ্টা করা হয়েছে। ${fallback.lockedMinutes ?? 15} মিনিট পর আবার চেষ্টা করুন`, `Too many attempts. Try again in ${fallback.lockedMinutes ?? 15} minutes`)
+          : fallback.error === "already_registered"
+            ? L("এই যোগাযোগের তথ্য দিয়ে ইতিমধ্যে নিবন্ধন করা হয়েছে", "An account already exists for this contact")
+            : L("নিবন্ধন সম্পন্ন হয়নি, আবার চেষ্টা করুন", "Registration could not be completed; please try again"),
+        { description },
+      );
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      console.error("Admin staff signup fallback request failed", message);
+      toast.error(
+        L("নিবন্ধন সম্পন্ন হয়নি, আবার চেষ্টা করুন", "Registration could not be completed; please try again"),
+        { description: L("সার্ভারের লগ দেখুন বা প্রশাসকের সঙ্গে যোগাযোগ করুন।", "Check the server logs or contact the administrator.") },
+      );
+    }
+    return false;
+  };
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -589,7 +649,7 @@ export function LoginDialog({ open, onClose }: { open: boolean; onClose: () => v
                 </p>
                 <div className="space-y-1.5">
                   <Label>{L("নাম", "Name")}</Label>
-                  <Input autoComplete="name" maxLength={100} value={signupName} onChange={(event) => setSignupName(event.target.value)} />
+                  <Input name="name" autoComplete="name" maxLength={100} value={signupName} onChange={(event) => setSignupName(event.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>{L("ভূমিকা", "Role")}</Label>
@@ -620,6 +680,7 @@ export function LoginDialog({ open, onClose }: { open: boolean; onClose: () => v
                   <Input
                     type={signupRole === "admin" ? "email" : "tel"}
                     inputMode={signupRole === "admin" ? "email" : "numeric"}
+                    name={signupRole === "admin" ? "email" : "tel"}
                     autoComplete={signupRole === "admin" ? "email" : "tel"}
                     maxLength={signupRole === "admin" ? 255 : 20}
                     value={signupContact}
@@ -630,40 +691,106 @@ export function LoginDialog({ open, onClose }: { open: boolean; onClose: () => v
                 {signupRole === "admin" && (
                   <div className="space-y-1.5">
                     <Label>{L("পাসওয়ার্ড", "Password")}</Label>
-                    <Input type="password" autoComplete="new-password" minLength={8} maxLength={128} value={signupPassword} onChange={(event) => setSignupPassword(event.target.value)} />
+                    <Input name="new-password" type="password" autoComplete="new-password" minLength={8} maxLength={128} value={signupPassword} onChange={(event) => setSignupPassword(event.target.value)} />
                   </div>
                 )}
                 <Button
                   className="w-full"
                   disabled={busy || !signupName.trim() || !signupContact.trim() || !signupUnion || (signupRole === "admin" && signupPassword.length < 8)}
                   onClick={() => run(async () => {
-                    const result = await register({
-                      data: {
-                        name: signupName,
-                        contact: signupContact,
-                        role: signupRole,
-                        unionId: signupUnion,
-                        ...(signupRole === "admin" ? { password: signupPassword } : {}),
-                      },
-                    });
-                    if (result.ok) {
-                      setSignupMessage("submitted");
-                    } else {
-                      if (result.error === "locked" || result.error === "too_many") {
-                        fail(result);
-                      } else if (result.error === "bad_phone") {
+                    try {
+                      const digits = signupContact.replace(/\D/g, "");
+                      const phone = /^01\d{9}$/.test(digits)
+                        ? `+88${digits}`
+                        : /^8801\d{9}$/.test(digits)
+                          ? `+${digits}`
+                          : null;
+                      if (signupRole !== "admin" && !phone) {
                         toast.error(L("সঠিক মোবাইল নম্বর দিন (01XXXXXXXXX)", "Enter a valid mobile number (01XXXXXXXXX)"));
-                      } else if (result.error === "already_registered") {
-                        toast.error(L("এই যোগাযোগের তথ্য দিয়ে ইতিমধ্যে নিবন্ধন করা হয়েছে", "An account already exists for this contact"));
-                      } else if (result.error === "bad_union") {
-                        toast.error(L("বৈধ ইউনিয়ন নির্বাচন করুন", "Select a valid union"));
-                      } else if (result.error === "bad_email") {
-                        toast.error(L("সঠিক ইমেইল ও কমপক্ষে ৮ অক্ষরের পাসওয়ার্ড দিন", "Enter a valid email and a password of at least 8 characters"));
-                      } else if (result.error === "registration_failed") {
-                        toast.error(L("নিবন্ধন সম্পন্ন হয়নি, আবার চেষ্টা করুন", "Registration could not be completed; please try again"));
-                      } else {
-                        toast.error(L("সেবা সাময়িকভাবে অনুপলব্ধ, পরে চেষ্টা করুন", "The service is temporarily unavailable; try again later"));
+                        return;
                       }
+
+                      const phoneMetadata = phone
+                        ? {
+                            phone_number: phone,
+                            email: `${phone.replace(/\D/g, "")}@manirampur.gov.bd`,
+                            dummy_email: `${phone.replace(/\D/g, "")}@manirampur.gov.bd`,
+                          }
+                        : {};
+                      const temporaryPassword = phone
+                        ? `${crypto.randomUUID()}${crypto.randomUUID()}`
+                        : signupPassword;
+                      const credentials = signupRole === "admin"
+                        ? { email: signupContact.trim().toLowerCase(), password: temporaryPassword }
+                        : phone
+                          ? { phone, password: temporaryPassword }
+                          : null;
+                      if (!credentials) return;
+                      const localDevelopment =
+                        import.meta.env.DEV &&
+                        typeof window !== "undefined" &&
+                        ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+                      if (localDevelopment) {
+                        await submitWithAdminFallback();
+                        return;
+                      }
+                      const { data, error } = await supabase.auth.signUp({
+                        ...credentials,
+                        options: {
+                          data: {
+                            full_name: signupName.trim(),
+                            role: signupRole,
+                            union_id: signupUnion,
+                            upazila_id: "manirampur",
+                            ...phoneMetadata,
+                            signup_role: signupRole,
+                            signup_name: signupName.trim(),
+                            signup_union_id: signupUnion,
+                          },
+                        },
+                      });
+                      if (error) {
+                        console.error("Public staff sign-up failed", {
+                          code: error.code,
+                          status: error.status,
+                          message: error.message,
+                        });
+                        const signupDisabled =
+                          error.code === "signup_disabled" ||
+                          /signups? (?:are )?not allowed for this instance/i.test(error.message);
+                        if (signupDisabled) {
+                          await submitWithAdminFallback();
+                          return;
+                        }
+                        const duplicate = error.code === "user_already_exists" || error.code === "email_exists" || error.code === "phone_exists";
+                        toast.error(
+                          duplicate
+                            ? L("এই যোগাযোগের তথ্য দিয়ে ইতিমধ্যে নিবন্ধন করা হয়েছে", "An account already exists for this contact")
+                            : L("নিবন্ধন সম্পন্ন হয়নি, আবার চেষ্টা করুন", "Registration could not be completed; please try again"),
+                          { description: error.message },
+                        );
+                        return;
+                      }
+                      if (!data.user) {
+                        console.error("Public staff sign-up returned no user");
+                        toast.error(
+                          L("নিবন্ধন সম্পন্ন হয়নি, আবার চেষ্টা করুন", "Registration could not be completed; please try again"),
+                          { description: L("Supabase কোনো ব্যবহারকারী ফেরত দেয়নি।", "Supabase returned no user.") },
+                        );
+                        return;
+                      }
+                      if (data.session) {
+                        const { error: signOutError } = await supabase.auth.signOut();
+                        if (signOutError) console.error("Could not clear the pending signup session", signOutError.message);
+                      }
+                      setSignupMessage("submitted");
+                    } catch (cause) {
+                      const message = cause instanceof Error ? cause.message : String(cause);
+                      console.error("Public staff sign-up failed", message);
+                      toast.error(
+                        L("নিবন্ধন সম্পন্ন হয়নি, আবার চেষ্টা করুন", "Registration could not be completed; please try again"),
+                        { description: message },
+                      );
                     }
                   })}
                 >

@@ -19,7 +19,8 @@ type UpazilaAnnouncement = {
 };
 const localDemoLoginAvailable =
   import.meta.env.DEV &&
-  (!import.meta.env["VITE_SUPABASE_URL"] || !import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"]);
+  (!import.meta.env["VITE_SUPABASE_URL"] ||
+    !(import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] || import.meta.env["VITE_SUPABASE_ANON_KEY"]));
 export const MASTER_APPLICATIONS_KEY = "up_master_applications_v5";
 export const MASTER_APPLICATIONS_UPDATED_EVENT = "up-master-applications-updated";
 const LEGACY_DEMO_CASE_KEYS = [
@@ -125,6 +126,7 @@ const MAX_CASE_FILES = 4;
 
 interface Ctx {
   state: AppState; user: User | null; authReady: boolean; mfa: Mfa; online: boolean; demoMode: boolean; demoLoginAvailable: boolean;
+  caseLoadError: string | null;
   announcements: UpazilaAnnouncement[];
   selectedUpazilaId: string | undefined;
   setSelectedUpazilaId: (id: string | undefined) => void;
@@ -239,6 +241,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [authReady, setAuthReady] = useState(false);
   const [mfa, setMfa] = useState<Mfa>("ok");
   const [demoMode, setDemoMode] = useState(false);
+  const [caseLoadError, setCaseLoadError] = useState<string | null>(null);
   const [epiVisits, setEpiVisits] = useState<EpiVisit[]>([]);
   const [announcements, setAnnouncements] = useState<UpazilaAnnouncement[]>([]);
   const [selectedUpazilaId, setSelectedUpazilaId] = useState<string>();
@@ -256,6 +259,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const enterDemoLogin = useCallback((role: "worker" | "police" | "admin" | "uno") => {
     if (!localDemoLoginAvailable && !previewTestingAllowed()) return;
+    setCaseLoadError(null);
     const demo = seedState();
     const demoUserIds = { worker: "u-w1", police: "u-p1", admin: "u-a1", uno: "u-uno" };
     const previewUser = demo.users.find((candidate) => candidate.id === demoUserIds[role]);
@@ -300,48 +304,78 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const loadData = useCallback(async () => {
     if (demoMode) return;
-    const [ups, profs, roles, cases, remarks, noticeRows] = await Promise.all([
-      supabase.from("upazilas").select("*").order("created_at"),
-      supabase.from("profiles").select("*"),
-      supabase.from("user_roles").select("user_id, role"),
-      supabase.from("cases").select("*").order("created_at", { ascending: false }).limit(2000),
-      supabase.from("case_remarks").select("*").order("created_at"),
-      supabase.from("upazila_announcements").select("*"),
-    ]);
-    if (noticeRows.error) toast.error(noticeRows.error.message);
-    setAnnouncements((noticeRows.data ?? []).map((notice) => ({
-      upazilaId: notice.upazila_id,
-      noticeBn: notice.notice_bn,
-      noticeEn: notice.notice_en,
-      active: notice.active,
-      updatedAt: Date.parse(notice.updated_at),
-    })));
-    const upazilas: Upazila[] = (ups.data ?? []).map((u) => ({ id: u.id, bn: u.bn, en: u.en, districtBn: u.district_bn, districtEn: u.district_en,
-      divisionBn: u.division_bn, divisionEn: u.division_en, unions: u.unions as unknown as Union[] }));
-    const users: User[] = (profs.data ?? []).map((p) => ({ id: p.id, name: { bn: p.name_bn, en: p.name_en },
-      role: (roles.data ?? []).find((r) => r.user_id === p.id)?.role ?? "worker",
-      mobile: p.mobile ?? undefined, email: p.email ?? undefined, upazilaId: p.upazila_id ?? "",
-      stationId: p.station_id ?? p.union_id ?? undefined, unionId: p.union_id ?? undefined, ward: p.ward ?? undefined }));
-    const upazilasWithSavedVillages = applySavedUnionVillages(upazilas);
-    setState({ upazilas: upazilasWithSavedVillages, users, cases: (cases.data ?? []).map((c) => mapCase(c, remarks.data ?? [])), audit: [], sessionId: null });
-  }, [demoMode]);
+    try {
+      const [ups, profs, roles, cases, remarks, noticeRows] = await Promise.all([
+        supabase.from("upazilas").select("*").order("created_at"),
+        supabase.from("profiles").select("*"),
+        supabase.from("user_roles").select("user_id, role"),
+        supabase.from("cases").select("*").order("created_at", { ascending: false }).limit(2000),
+        supabase.from("case_remarks").select("*").order("created_at"),
+        supabase.from("upazila_announcements").select("*"),
+      ]);
+      if (noticeRows.error) toast.error(noticeRows.error.message);
+      setAnnouncements((noticeRows.data ?? []).map((notice) => ({
+        upazilaId: notice.upazila_id,
+        noticeBn: notice.notice_bn,
+        noticeEn: notice.notice_en,
+        active: notice.active,
+        updatedAt: Date.parse(notice.updated_at),
+      })));
+      const upazilas: Upazila[] = (ups.data ?? []).map((u) => ({ id: u.id, bn: u.bn, en: u.en, districtBn: u.district_bn, districtEn: u.district_en,
+        divisionBn: u.division_bn, divisionEn: u.division_en, unions: u.unions as unknown as Union[] }));
+      const users: User[] = (profs.data ?? []).map((p) => ({ id: p.id, name: { bn: p.name_bn, en: p.name_en },
+        role: (roles.data ?? []).find((r) => r.user_id === p.id)?.role ?? "worker",
+        mobile: p.mobile ?? undefined, email: p.email ?? undefined, upazilaId: p.upazila_id ?? "",
+        stationId: p.station_id ?? p.union_id ?? undefined, unionId: p.union_id ?? undefined, ward: p.ward ?? undefined }));
+      const caseError = cases.error ?? remarks.error;
+      if (caseError) {
+        setCaseLoadError(caseError.message);
+        console.error("Could not load registration applications", caseError);
+        toast.error(L("আবেদন তালিকা লোড করা যায়নি", "Could not load applications"));
+      } else {
+        setCaseLoadError(null);
+      }
+      const upazilasWithSavedVillages = applySavedUnionVillages(upazilas);
+      setState((current) => ({
+        upazilas: upazilasWithSavedVillages,
+        users,
+        cases: caseError ? current.cases : (cases.data ?? []).map((c) => mapCase(c, remarks.data ?? [])),
+        audit: [],
+        sessionId: null,
+      }));
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setCaseLoadError(message);
+      console.error("Could not load registration applications", cause);
+      toast.error(L("আবেদন তালিকা লোড করা যায়নি", "Could not load applications"));
+    }
+  }, [L, demoMode]);
 
   const refreshCases = useCallback(async () => {
     if (demoMode) return;
-    const [cases, remarks] = await Promise.all([
-      supabase.from("cases").select("*").order("created_at", { ascending: false }).limit(2000),
-      supabase.from("case_remarks").select("*").order("created_at"),
-    ]);
-    if (cases.error || remarks.error) {
+    try {
+      const [cases, remarks] = await Promise.all([
+        supabase.from("cases").select("*").order("created_at", { ascending: false }).limit(2000),
+        supabase.from("case_remarks").select("*").order("created_at"),
+      ]);
       const error = cases.error ?? remarks.error;
-      console.error("Failed to refresh live registration cases", error);
+      if (error) {
+        setCaseLoadError(error.message);
+        console.error("Failed to refresh live registration cases", error);
+        toast.error(L("লাইভ আবেদন হালনাগাদ করা যায়নি", "Could not refresh live applications"));
+        return;
+      }
+      setCaseLoadError(null);
+      setState((current) => ({
+        ...current,
+        cases: (cases.data ?? []).map((item) => mapCase(item, remarks.data ?? [])),
+      }));
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setCaseLoadError(message);
+      console.error("Failed to refresh live registration cases", cause);
       toast.error(L("লাইভ আবেদন হালনাগাদ করা যায়নি", "Could not refresh live applications"));
-      return;
     }
-    setState((current) => ({
-      ...current,
-      cases: (cases.data ?? []).map((item) => mapCase(item, remarks.data ?? [])),
-    }));
   }, [L, demoMode]);
 
   const refreshAuth = useCallback(async () => {
@@ -547,6 +581,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     : L("এই NID/জন্ম নিবন্ধন নম্বরে মৃত্যু নিবন্ধন আগেই হয়েছে", "A death with this NID/birth certificate number already exists");
 
   const value: Ctx = {
+    caseLoadError,
     state: { ...state, cases: [...pending.filter((p) => p.created_by === user?.id).map((p) => ({ ...mapCase({ ...p, created_at: p.queued_at, files: [], files_purged: false, status: "pending", sms_sent: false }, []), synced: false })), ...state.cases] },
     user, authReady, mfa, online, lang, L, n, dark, demoMode, demoLoginAvailable: localDemoLoginAvailable, epiVisits,
     announcements, selectedUpazilaId, setSelectedUpazilaId, activeUnionId, setActiveUnionId,

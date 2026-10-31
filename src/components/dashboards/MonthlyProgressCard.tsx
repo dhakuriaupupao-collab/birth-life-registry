@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useApp } from "@/lib/store";
 import { downloadCSV, printPDF } from "@/lib/report";
 import { filterAdvancedReport, type AdvancedReportFilters } from "@/lib/advanced-report";
-import { getCompletionPercent, getMonthlyStatusProgress } from "@/lib/monthly-targets";
+import { getCompletionPercent, getDhakaMonthYear, getMonthlyStatusProgress } from "@/lib/monthly-targets";
 import type { RegCase } from "@/lib/types";
 
 type CaseTypeCounts = {
@@ -114,20 +114,34 @@ export function MonthlyProgressCard({
     [reportCases],
   );
   const now = new Date();
-  const monthName = new Intl.DateTimeFormat(L("bn-BD", "en-US"), { month: "long" }).format(now);
+  const monthYear = getDhakaMonthYear();
+  const dhakaYear = Number(monthYear.slice(0, 4));
+  const dhakaMonth = Number(monthYear.slice(5, 7));
+  const monthDate = new Date(Date.UTC(dhakaYear, dhakaMonth - 1, 15));
+  const monthName = new Intl.DateTimeFormat(L("bn-BD", "en-US"), {
+    month: "long",
+    timeZone: "UTC",
+  }).format(monthDate);
   const monthYearBn = new Intl.DateTimeFormat("bn-BD", {
     month: "long",
     year: "numeric",
-  }).format(now);
+    timeZone: "UTC",
+  }).format(monthDate);
   const monthYearEn = new Intl.DateTimeFormat("en-US", {
     month: "long",
     year: "numeric",
-  }).format(now);
+    timeZone: "UTC",
+  }).format(monthDate);
   const monthlyProgressTitle = L(
     `${monthYearBn} অগ্রগতির বিস্তারিত`,
     `${monthYearEn} progress details`,
   );
-  const remainingDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
+  const dhakaDay = Number(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Dhaka",
+    day: "numeric",
+  }).format(now));
+  const daysInMonth = new Date(Date.UTC(dhakaYear, dhakaMonth, 0)).getUTCDate();
+  const remainingDays = daysInMonth - dhakaDay;
   const gradientId = `monthly-progress-${useId().replaceAll(":", "")}`;
   const target = targets.birth + targets.death;
   const completed = counts.birth.completed + counts.death.completed;

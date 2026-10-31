@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   getCompletionPercent,
   getDhakaMonthYear,
+  getMonthlyStationCaseCounts,
   getMonthlyStatusProgress,
 } from "./monthly-targets";
+import { seedState } from "./seed";
 
 describe("union monthly target helpers", () => {
   it("uses the Bangladesh calendar month when building the month key", () => {
@@ -32,6 +34,56 @@ describe("union monthly target helpers", () => {
       value: 3,
       denominator: 8,
       percentage: 38,
+    });
+  });
+
+  it("counts assigned union submissions and completions in Dhaka month consistently", () => {
+    const base = seedState().cases[0]!;
+    const cases = [
+      {
+        ...base,
+        id: "submitted-pending",
+        upazilaId: "manirampur",
+        stationId: "mn-dhakuria",
+        unionId: "mn-dhakuria",
+        createdAt: Date.parse("2026-10-10T12:00:00+06:00"),
+        status: "pending" as const,
+      },
+      {
+        ...base,
+        id: "submitted-progress",
+        upazilaId: "manirampur",
+        stationId: "mn-dhakuria",
+        unionId: "mn-dhakuria",
+        createdAt: Date.parse("2026-10-12T12:00:00+06:00"),
+        status: "progress" as const,
+      },
+      {
+        ...base,
+        id: "completed-this-month",
+        upazilaId: "manirampur",
+        stationId: "mn-dhakuria",
+        unionId: "mn-dhakuria",
+        createdAt: Date.parse("2026-09-20T12:00:00+06:00"),
+        completedAt: Date.parse("2026-10-15T12:00:00+06:00"),
+        status: "completed" as const,
+      },
+      {
+        ...base,
+        id: "other-union",
+        upazilaId: "manirampur",
+        stationId: "mn-rohita",
+        unionId: "mn-rohita",
+        createdAt: Date.parse("2026-10-15T12:00:00+06:00"),
+        status: "pending" as const,
+      },
+    ];
+
+    expect(
+      getMonthlyStationCaseCounts(cases, "manirampur", "mn-dhakuria", "2026-10-01"),
+    ).toEqual({
+      birth: { pending: 1, progress: 1, completed: 1, total: 2 },
+      death: { pending: 0, progress: 0, completed: 0, total: 0 },
     });
   });
 });

@@ -91,9 +91,11 @@ export function WorkerApplicationListPage({
     let cancelled = false;
     setAuditHistoryLoading(true);
     setAuditHistoryError("");
-    void supabase
-      .rpc("case_history", { p_case_id: selectedApplication.id })
-      .then(({ data, error }) => {
+    void (async () => {
+      try {
+        const { data, error } = await supabase.rpc("case_history", {
+          p_case_id: selectedApplication.id,
+        });
         if (cancelled) return;
         if (error) {
           console.error("Could not load case audit history", error);
@@ -103,7 +105,15 @@ export function WorkerApplicationListPage({
           setCaseAuditHistory(data ?? []);
         }
         setAuditHistoryLoading(false);
-      });
+      } catch (cause) {
+        if (cancelled) return;
+        const message = cause instanceof Error ? cause.message : String(cause);
+        console.error("Could not load case audit history", cause);
+        setAuditHistoryError(message);
+        setCaseAuditHistory([]);
+        setAuditHistoryLoading(false);
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -205,7 +215,7 @@ export function WorkerApplicationListPage({
     const query = search.trim().toLocaleLowerCase();
     return (administrative
       ? administrative.cases
-      : user?.role === "worker"
+      : user?.role === "worker" || user?.role === "police"
         ? scopedCases(state, user)
         : []
     )
@@ -242,7 +252,7 @@ export function WorkerApplicationListPage({
   const first = applications.length ? (currentPage - 1) * pageSize + 1 : 0;
   const last = Math.min(currentPage * pageSize, applications.length);
 
-  if (administrative ? user?.role !== "admin" && !administrative.localPreview : user?.role !== "worker") {
+  if (administrative ? user?.role !== "admin" && !administrative.localPreview : user?.role !== "worker" && user?.role !== "police") {
     return (
       <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-950">
         {L("এই পাতায় প্রবেশের অনুমতি নেই", "You don't have access to this page")}
@@ -379,7 +389,7 @@ export function WorkerApplicationListPage({
                 L("সংযুক্তি", "Attachments"),
                 L("অবস্থা", "Status"),
                 L("কার্যক্রম", "Action"),
-                administrative ? L("নিবন্ধিত করুন", "Mark registered") : L("সংশোধন করুন", "Correction"),
+                administrative ?                 L("নিবন্ধিত করুন", "Mark registered") : user?.role === "police" ? L("পুলিশি কাজ", "Police task") : L("সংশোধন করুন", "Correction"),
                 ...(administrative ? [L("প্রশাসনিক কার্যক্রম", "Administrative actions")] : []),
               ].map((heading, index) => (
                 <th
@@ -402,10 +412,13 @@ export function WorkerApplicationListPage({
                 onAttachments={() => setSelectedAttachments(item)}
                 onEdit={() => administrative
                   ? administrative.onEdit(item)
+                  : user?.role === "police"
+                    ? setSelectedApplication(item)
                   : void navigate({
                       to: type === "birth" ? "/birth-entry" : "/death-entry",
                       search: { applicationId: item.id },
                     })}
+                canEdit={user?.role === "worker"}
                 administrativeActions={administrative?.actions(item, () => setSelectedAttachments(item))}
                 {...(administrative ? { onRegister: () => administrative.onRegister(item) } : {})}
                 villageName={(() => {
@@ -768,6 +781,7 @@ function ApplicationRow({
   n,
   administrativeActions,
   onRegister,
+  canEdit,
 }: {
   item: RegCase;
   serial: number;
@@ -780,6 +794,7 @@ function ApplicationRow({
   n: (value: number | string) => string;
   administrativeActions?: ReactNode;
   onRegister?: () => void;
+  canEdit: boolean;
 }) {
   return (
     <>
@@ -858,28 +873,32 @@ function ApplicationRow({
             </Button>
           ) : (
             <div className="flex justify-end">
-              <Button
-                type="button"
-                size="sm"
-                variant={item.details?.correctedAt ? "default" : "outline"}
-                className={
-                  item.details?.correctedAt
-                    ? "whitespace-nowrap bg-green-600 text-white hover:bg-green-700"
-                    : "whitespace-nowrap border-amber-200 text-amber-900 hover:bg-amber-50"
-                }
-                onClick={onEdit}
-                disabled={item.status === "completed" || item.status === "rejected"}
-                title={
-                  item.status === "completed" || item.status === "rejected"
-                    ? L("এই আবেদনটি সংশোধন করা যাবে না", "This application cannot be corrected")
-                    : item.details?.correctedAt
-                      ? L("সংশোধিত", "Corrected")
-                      : L("সংশোধন করুন", "Edit application")
-                }
-              >
-                <Pencil className="mr-1 h-4 w-4" aria-hidden="true" />
-                {L("সংশোধন করুন", "Edit")}
-              </Button>
+              {canEdit ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={item.details?.correctedAt ? "default" : "outline"}
+                  className={
+                    item.details?.correctedAt
+                      ? "whitespace-nowrap bg-green-600 text-white hover:bg-green-700"
+                      : "whitespace-nowrap border-amber-200 text-amber-900 hover:bg-amber-50"
+                  }
+                  onClick={onEdit}
+                  disabled={item.status === "completed" || item.status === "rejected"}
+                  title={
+                    item.status === "completed" || item.status === "rejected"
+                      ? L("এই আবেদনটি সংশোধন করা যাবে না", "This application cannot be corrected")
+                      : item.details?.correctedAt
+                        ? L("সংশোধিত", "Corrected")
+                        : L("সংশোধন করুন", "Edit application")
+                  }
+                >
+                  <Pencil className="mr-1 h-4 w-4" aria-hidden="true" />
+                  {L("সংশোধন করুন", "Edit")}
+                </Button>
+              ) : (
+                <span className="text-sm text-muted-foreground">{L("নথি সংগ্রহ", "Collection task")}</span>
+              )}
             </div>
           )}
         </td>

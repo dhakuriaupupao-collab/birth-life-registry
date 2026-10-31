@@ -6,11 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { readUnionVillageMaster, saveUnionVillageDraft, scopedCases, useApp } from "@/lib/store";
 import { downloadCSV, printPDF } from "@/lib/report";
-import { TARGET, type Status, type Upazila, type Union, type Village } from "@/lib/types";
-import { PageTitle, Stat, monthCount, redFlags, useCaseHelpers } from "../shared";
+import { type Status, type Upazila, type Union, type Village } from "@/lib/types";
+import { PageTitle, Stat, redFlags, useCaseHelpers } from "../shared";
 import { CaseReview } from "./CaseReview";
 import { UnionStatisticsPanel } from "./UnionStatisticsPanel";
 import { useAssignedRegistrationTarget } from "@/lib/use-assigned-registration-target";
+import { AssignedUnionProgressCard } from "./AssignedUnionProgressCard";
+import { AssignedUnionHeader } from "./AssignedUnionHeader";
 
 export function VillageManager({ upazila, union }: { upazila: Upazila; union: Union }) {
   const { L, saveUnionVillages } = useApp();
@@ -23,7 +25,7 @@ export function VillageManager({ upazila, union }: { upazila: Upazila; union: Un
   useEffect(() => {
     setVillages(readUnionVillageMaster(union.id) ?? union.villages);
     setDraftSaved(true);
-  }, [union.id]);
+  }, [union.id, union.villages]);
 
   useEffect(() => {
     setDraftSaved(false);
@@ -211,28 +213,33 @@ export function AdminDashboard() {
   const [filter, setFilter] = useState<Status | "all">("all");
   const cases = scopedCases(state, user);
   const up = state.upazilas.find((u) => u.id === user!.upazilaId)!;
-  const un = up.unions.find((u) => u.id === user!.unionId)!;
-  const b = stationTarget?.counts.birth.total ?? monthCount(cases, "birth");
-  const d = stationTarget?.counts.death.total ?? monthCount(cases, "death");
-  const flags = redFlags(state, user!.upazilaId, user!.unionId);
+  const stationId = user!.stationId ?? user!.unionId;
+  const un = up.unions.find((u) => u.id === stationId)!;
+  const b = stationTarget?.counts.birth.completed ?? 0;
+  const d = stationTarget?.counts.death.completed ?? 0;
+  const flags = redFlags(state, user!.upazilaId, stationId);
   const shown = cases.filter((c) => filter === "all" || c.status === filter);
   const targets = stationTarget?.target &&
     stationTarget.target.unionId === (user!.stationId ?? user!.unionId)
     ? stationTarget.target
-    : { birth: TARGET.birth, death: TARGET.death };
+    : { birth: 0, death: 0 };
 
   return (
     <>
+      <div className="mb-6">
+        <AssignedUnionHeader />
+        <AssignedUnionProgressCard />
+      </div>
       <PageTitle title={L(un.bn, un.en)} sub={L(`${up.bn} উপজেলা · প্রশাসনিক কর্মকর্তা`, `${up.en} Upazila · Administrative Officer`)}
         actions={<>
           <Button variant="outline" onClick={() => downloadCSV(rows(cases), "union-report.csv")}><Download className="mr-1 h-4 w-4" />{L("ইউনিয়ন রিপোর্ট", "Union Report")}</Button>
           <Button variant="outline" onClick={() => printPDF(`Union Report — ${un.en}`, rows(cases))}><FileText className="mr-1 h-4 w-4" />PDF</Button>
         </>} />
       <div className="mb-6 grid gap-3 sm:grid-cols-2">
-        {([["birth", b, targets.birth, L("এ মাসে জন্ম", "Births this month")], ["death", d, targets.death, L("এ মাসে মৃত্যু", "Deaths this month")]] as const).map(([k, v, t, lbl]) => (
+        {([["birth", b, targets.birth, L("এ মাসে জন্ম নিবন্ধন সম্পন্ন", "Birth registrations completed this month")], ["death", d, targets.death, L("এ মাসে মৃত্যু নিবন্ধন সম্পন্ন", "Death registrations completed this month")]] as const).map(([k, v, t, lbl]) => (
           <div key={k} className="rounded-xl border border-border bg-card p-4">
             <div className="flex justify-between text-sm"><span>{lbl}</span><b>{n(v)} / {n(t)}</b></div>
-            <Progress value={Math.min(100, (v / t) * 100)} className="mt-2 h-3" />
+            <Progress value={t > 0 ? Math.min(100, (v / t) * 100) : 0} className="mt-2 h-3" />
           </div>
         ))}
       </div>

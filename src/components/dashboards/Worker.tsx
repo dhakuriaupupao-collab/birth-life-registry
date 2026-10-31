@@ -47,6 +47,7 @@ import { getUnionVillages, resolveVillageAddress } from "@/lib/geography";
 import { roleLabel, scopedCases, useApp } from "@/lib/store";
 import type { Bi, CaseFileMetadata, RegCase, Union, Upazila, Village } from "@/lib/types";
 import { UnifiedStationDashboardTop } from "./UnifiedStationDashboardTop";
+import { AssignedUnionHeader } from "./AssignedUnionHeader";
 
 const emptyBi: Bi = { bn: "", en: "" };
 type CaseType = "birth" | "death";
@@ -1499,7 +1500,7 @@ export function RegForm({
 }
 
 function EpiAttendanceForm({ onSaved }: { onSaved: () => void }) {
-  const { L, user, state, addEpiVisit } = useApp();
+  const { L, n, user, state, addEpiVisit } = useApp();
   const assignedUpazila = user
     ? state.upazilas.find((item) => item.id === user.upazilaId)
     : undefined;
@@ -1600,7 +1601,7 @@ function EpiAttendanceForm({ onSaved }: { onSaved: () => void }) {
 }
 
 export function WorkerDashboard() {
-  const { L, n, user, state, refresh, demoMode, epiVisits } = useApp();
+  const { L, n, user, state, refresh, demoMode, epiVisits, activeUnionId } = useApp();
   const { address, date, rows } = useCaseHelpers();
   const [dialog, setDialog] = useState<DialogState>(null);
   const [formInstance, setFormInstance] = useState(0);
@@ -1708,10 +1709,14 @@ export function WorkerDashboard() {
   if (!user) return null;
   const goToForm = (type: CaseType, entry?: RegCase) =>
     setDialog(entry ? { kind: "form", type, entry } : { kind: "form", type });
+  const stationId = demoMode
+    ? activeUnionId ?? user.stationId ?? user.unionId
+    : user.stationId ?? user.unionId;
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-50 via-white to-lime-50 p-2 text-slate-900 sm:gap-3 sm:p-4">
-      <UnifiedStationDashboardTop />
+      {stationId && <AssignedUnionHeader stationId={stationId} upazilaId={user.upazilaId} />}
+      <UnifiedStationDashboardTop showAssignedUnionHeader={false} />
       <div className="flex shrink-0 items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-800 sm:text-xs">

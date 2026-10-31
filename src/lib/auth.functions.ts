@@ -52,8 +52,8 @@ export const passwordSignIn = createServerFn({ method: "POST" })
     return { ok: true, tokens: { access_token: s.session.access_token, refresh_token: s.session.refresh_token } };
   });
 
-/* ---------- Public staff registration (accounts remain disabled until union approval) ---------- */
-export const registerStaff = createServerFn({ method: "POST" })
+/* ---------- Server-only fallback when the Supabase instance disables public signup ---------- */
+export const registerStaffWithAdminFallback = createServerFn({ method: "POST" })
   .validator((d) => z.object({
     name: z.string().trim().min(1).max(100),
     contact: z.string().trim().max(255),
@@ -62,85 +62,116 @@ export const registerStaff = createServerFn({ method: "POST" })
     password: z.string().min(8).max(128).optional(),
   }).parse(d))
   .handler(async ({ data }) => {
-    const isFieldRole = data.role === "worker" || data.role === "police";
-    const phone = isFieldRole ? normalizePhone(data.contact) : null;
+    const fieldRole = data.role === "worker" || data.role === "police";
+    const phone = fieldRole ? normalizePhone(data.contact) : null;
     let email: string | null = null;
-    if (isFieldRole && !phone) return { ok: false as const, error: "bad_phone" };
-    if (!isFieldRole) {
+    if (fieldRole && !phone) return { ok: false as const, error: "bad_phone" };
+    if (!fieldRole) {
       const parsedEmail = z.string().trim().toLowerCase().email().max(255).safeParse(data.contact);
       if (!parsedEmail.success || !data.password) return { ok: false as const, error: "bad_email" };
       email = parsedEmail.data;
     }
-
-    const identifier = phone ? `phone:${phone}` : `email:${email ?? ""}`;
-    const ip = clientIp();
-    const lock = await lockoutMinutes(identifier, ip);
-    if (lock) return { ok: false as const, error: "locked", lockedMinutes: lock };
-    if ((await recentCount(identifier, "signup", 60)) >= 3) {
-      return { ok: false as const, error: "too_many", lockedMinutes: 60 };
-    }
-
-    const union = MONIRAMPUR_STATIONS.find((station) => station.id === data.unionId && station.type === "union");
-    if (!union) return { ok: false as const, error: "bad_union" };
-
-    const db = await admin();
-    const { data: upazila, error: upazilaError } = await db.from("upazilas").select("unions").eq("id", "manirampur").maybeSingle();
-    if (upazilaError) {
-      console.error("Could not validate registration union", upazilaError.message);
-      return { ok: false as const, error: "unavailable" };
-    }
-    if (!upazila || !(upazila.unions as { id?: string }[]).some((item) => item.id === data.unionId)) {
+    if (!MONIRAMPUR_STATIONS.some((station) => station.id === data.unionId && station.type === "union")) {
       return { ok: false as const, error: "bad_union" };
     }
 
-    const created = isFieldRole
-      ? await db.auth.admin.createUser({ phone: phone!, phone_confirm: false })
-      : await db.auth.admin.createUser({
-          email: email!,
-          password: data.password!,
-          email_confirm: true,
-        });
-    if (created.error || !created.data.user) {
-      await logAttempt(identifier, "signup", ip, false, created.error?.code ?? "create_failed");
-      if (created.error?.code === "email_exists" || created.error?.code === "phone_exists") {
-        return { ok: false as const, error: "already_registered" };
+    const identifier = phone ? `phone:${phone}` : `email:${email ?? ""}`;
+    const ip = clientIp();
+    try {
+      const lock = await lockoutMinutes(identifier, ip);
+      if (lock) return { ok: false as const, error: "locked", lockedMinutes: lock };
+      if ((await recentCount(identifier, "signup", 60)) >= 3) {
+        return { ok: false as const, error: "too_many", lockedMinutes: 60 };
       }
-      console.error("Staff registration account creation failed", created.error?.message);
-      return { ok: false as const, error: "registration_failed" };
-    }
 
-    const userId = created.data.user.id;
-    const { error: profileError } = await db.from("profiles").insert({
-      id: userId,
-      name_bn: data.name,
-      name_en: data.name,
-      mobile: phone,
-      email,
-      upazila_id: "manirampur",
-      union_id: data.unionId,
-      ward: isFieldRole ? 1 : null,
-      active: false,
-      status: "pending",
-    });
-    if (profileError) {
-      const { error: cleanupError } = await db.auth.admin.deleteUser(userId);
-      if (cleanupError) console.error("Could not remove incomplete staff registration", cleanupError.message);
-      console.error("Staff registration profile creation failed", profileError.message);
-      await logAttempt(identifier, "signup", ip, false, "profile_failed");
-      return { ok: false as const, error: "registration_failed" };
-    }
+      const dummyEmail = phone ? `${phone.replace(/\D/g, "")}@manirampur.gov.bd` : null;
+      const userMetadata = {
+        full_name: data.name,
+        role: data.role,
+        union_id: data.unionId,
+        upazila_id: "manirampur",
+        signup_name: data.name,
+        signup_role: data.role,
+        signup_union_id: data.unionId,
+        ...(phone ? { phone_number: phone, email: dummyEmail, dummy_email: dummyEmail } : {}),
+      };
+      const db = await admin();
+      const { data: created, error } = await db.auth.admin.createUser({
+        ...(phone ? { phone } : { email: email! }),
+        password: data.password ?? `${crypto.randomUUID()}${crypto.randomUUID()}`,
+        ...(phone ? {} : { email_confirm: false }),
+        user_metadata: userMetadata,
+      });
+      if (error || !created.user) {
+        const code = error?.code ?? "create_failed";
+        await logAttempt(identifier, "signup", ip, false, code);
+        console.error("Admin signup fallback failed", { code, message: error?.message });
+        if (code === "user_already_exists" || code === "email_exists" || code === "phone_exists") {
+          return { ok: false as const, error: "already_registered", message: error?.message };
+        }
+        return { ok: false as const, error: "registration_failed", message: error?.message ?? "Supabase returned no user" };
+      }
 
-    const { error: roleError } = await db.from("user_roles").insert({ user_id: userId, role: data.role });
-    if (roleError) {
-      const { error: cleanupError } = await db.auth.admin.deleteUser(userId);
-      if (cleanupError) console.error("Could not remove incomplete staff registration", cleanupError.message);
-      console.error("Staff registration role creation failed", roleError.message);
-      await logAttempt(identifier, "signup", ip, false, "role_failed");
-      return { ok: false as const, error: "registration_failed" };
-    }
+      const { error: profileError } = await db.from("profiles").upsert({
+        id: created.user.id,
+        name_bn: data.name,
+        name_en: data.name,
+        mobile: phone,
+        email: email ?? dummyEmail,
+        upazila_id: "manirampur",
+        union_id: data.unionId,
+        ward: fieldRole ? 1 : null,
+        active: false,
+        status: "pending",
+      });
+      if (profileError) {
+        const { error: deleteError } = await db.auth.admin.deleteUser(created.user.id);
+        if (deleteError) console.error("Could not clean up signup after profile creation failed", deleteError.message);
+        await logAttempt(identifier, "signup", ip, false, "profile_failed");
+        console.error("Admin signup fallback profile creation failed", profileError.message);
+        return { ok: false as const, error: "registration_failed", message: profileError.message };
+      }
 
-    await logAttempt(identifier, "signup", ip, true);
-    return { ok: true as const };
+      const { error: roleError } = await db.from("user_roles")
+        .upsert({ user_id: created.user.id, role: data.role }, { onConflict: "user_id,role" });
+      if (roleError) {
+        const { error: deleteError } = await db.auth.admin.deleteUser(created.user.id);
+        if (deleteError) console.error("Could not clean up signup after role creation failed", deleteError.message);
+        await logAttempt(identifier, "signup", ip, false, "role_failed");
+        console.error("Admin signup fallback role creation failed", roleError.message);
+        return { ok: false as const, error: "registration_failed", message: roleError.message };
+      }
+
+      if (email) {
+        const { error: resendError } = await publicClient().auth.resend({
+          type: "signup",
+          email,
+          options: { emailRedirectTo: origin() },
+        });
+        if (resendError) {
+          const { error: deleteError } = await db.auth.admin.deleteUser(created.user.id);
+          if (deleteError) console.error("Could not clean up unverified signup fallback user", deleteError.message);
+          await logAttempt(identifier, "signup", ip, false, "confirmation_email_failed");
+          console.error("Signup confirmation email failed", resendError.message);
+          return {
+            ok: false as const,
+            error: "confirmation_failed",
+            message: resendError.message,
+          };
+        }
+      }
+
+      await logAttempt(identifier, "signup", ip, true);
+      return { ok: true as const };
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      console.error("Admin signup fallback could not run", message);
+      return {
+        ok: false as const,
+        error: message.includes("SUPABASE_SERVICE_ROLE_KEY") ? "server_configuration" : "registration_failed",
+        message,
+      };
+    }
   });
 
 /* ---------- Union-scoped account approval (UP Administrative Officer only) ---------- */

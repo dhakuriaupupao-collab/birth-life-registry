@@ -18,7 +18,10 @@ export function AdministrativeRegistrationList({
   onHome?: () => void;
 }) {
   const { L, n, patchCase, findVillage } = useApp();
-  const safeCases = Array.isArray(cases) ? cases.filter((item) => item?.type === type) : [];
+  const safeCases = useMemo(
+    () => (Array.isArray(cases) ? cases.filter((item) => item?.type === type) : []),
+    [cases, type],
+  );
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | Status>("all");
   const [ward, setWard] = useState("all");
@@ -120,7 +123,7 @@ export function AdministrativeRegistrationList({
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full min-w-[1500px] text-left text-sm">
-          <thead className="bg-emerald-50 text-xs font-bold text-emerald-950"><tr>{["ক্রমিক নং", "আবেদন নং ও নিবন্ধন নম্বর", "নাম", "জন্ম/মৃত্যুর তারিখ", "পিতা ও মাতার নাম", "গ্রাম, ওয়ার্ড ও ডাকঘর", "স্ট্যাটাস", "সচিবের কার্যক্রম"].map((heading, index) => <th key={heading} className={`px-3 py-3 ${index === 7 ? "text-right" : ""}`}>{L(heading, ["Serial", "Application No. & Reg. No.", "Registered Person", type === "birth" ? "Date of Birth" : "Date of Death", "Father & Mother", "Village, Ward & Post Office", "Status", "Administrative Actions"][index])}</th>)}</tr></thead>
+          <thead className="bg-emerald-50 text-xs font-bold text-emerald-950"><tr>{["ক্রমিক নং", "আবেদন নং ও নিবন্ধন নম্বর", "নাম", "জন্ম/মৃত্যুর তারিখ", "পিতা ও মাতার নাম", "গ্রাম, ওয়ার্ড ও ডাকঘর", "স্ট্যাটাস", "সচিবের কার্যক্রম"].map((heading, index) => <th key={heading} className={`px-3 py-3 ${index === 7 ? "text-right" : ""}`}>{L(heading, ["Serial", "Application No. & Reg. No.", "Registered Person", type === "birth" ? "Date of Birth" : "Date of Death", "Father & Mother", "Village, Ward & Post Office", "Status", "Administrative Actions"][index] ?? heading)}</th>)}</tr></thead>
           <tbody>
             {visible.map((item, index) => {
               const found = findVillage(item.villageId);
