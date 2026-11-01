@@ -19,7 +19,8 @@ type UpazilaAnnouncement = {
 };
 const localDemoLoginAvailable =
   import.meta.env.DEV &&
-  (!import.meta.env["VITE_SUPABASE_URL"] ||
+  ((typeof __LOCAL_DEMO_AVAILABLE__ === "boolean" && __LOCAL_DEMO_AVAILABLE__) ||
+    !import.meta.env["VITE_SUPABASE_URL"] ||
     !(import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] || import.meta.env["VITE_SUPABASE_ANON_KEY"]));
 export const MASTER_APPLICATIONS_KEY = "up_master_applications_v5";
 export const MASTER_APPLICATIONS_UPDATED_EVENT = "up-master-applications-updated";
@@ -215,6 +216,38 @@ const mapCase = (r: any, remarks: any[]): RegCase => ({
   synced: true, smsSent: r.sms_sent,
 });
 
+const CASE_DATA_PAGE_SIZE = 1000;
+
+async function fetchAllCases() {
+  const rows: Database["public"]["Tables"]["cases"]["Row"][] = [];
+  for (let offset = 0; ; offset += CASE_DATA_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("cases")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(offset, offset + CASE_DATA_PAGE_SIZE - 1);
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if ((data?.length ?? 0) < CASE_DATA_PAGE_SIZE) return rows;
+  }
+}
+
+async function fetchAllRemarks() {
+  const rows: Database["public"]["Tables"]["case_remarks"]["Row"][] = [];
+  for (let offset = 0; ; offset += CASE_DATA_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("case_remarks")
+      .select("*")
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(offset, offset + CASE_DATA_PAGE_SIZE - 1);
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if ((data?.length ?? 0) < CASE_DATA_PAGE_SIZE) return rows;
+  }
+}
+
 function isDuplicateCase(existing: RegCase, candidate: NewCase, user: User): boolean {
   if (existing.type !== candidate.type) return false;
   const nid = candidate.nid.trim();
@@ -309,11 +342,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         supabase.from("upazilas").select("*").order("created_at"),
         supabase.from("profiles").select("*"),
         supabase.from("user_roles").select("user_id, role"),
-        supabase.from("cases").select("*").order("created_at", { ascending: false }).limit(2000),
-        supabase.from("case_remarks").select("*").order("created_at"),
+        fetchAllCases(),
+        fetchAllRemarks(),
         supabase.from("upazila_announcements").select("*"),
       ]);
-      if (noticeRows.error) toast.error(noticeRows.error.message);
+      const loadError = ups.error ?? profs.error ?? roles.error ?? noticeRows.error;
+      if (loadError) throw loadError;
       setAnnouncements((noticeRows.data ?? []).map((notice) => ({
         upazilaId: notice.upazila_id,
         noticeBn: notice.notice_bn,
@@ -327,19 +361,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         role: (roles.data ?? []).find((r) => r.user_id === p.id)?.role ?? "worker",
         mobile: p.mobile ?? undefined, email: p.email ?? undefined, upazilaId: p.upazila_id ?? "",
         stationId: p.station_id ?? p.union_id ?? undefined, unionId: p.union_id ?? undefined, ward: p.ward ?? undefined }));
-      const caseError = cases.error ?? remarks.error;
-      if (caseError) {
-        setCaseLoadError(caseError.message);
-        console.error("Could not load registration applications", caseError);
-        toast.error(L("আবেদন তালিকা লোড করা যায়নি", "Could not load applications"));
-      } else {
-        setCaseLoadError(null);
-      }
+      setCaseLoadError(null);
       const upazilasWithSavedVillages = applySavedUnionVillages(upazilas);
       setState((current) => ({
         upazilas: upazilasWithSavedVillages,
         users,
-        cases: caseError ? current.cases : (cases.data ?? []).map((c) => mapCase(c, remarks.data ?? [])),
+        cases: cases.map((c) => mapCase(c, remarks)),
         audit: [],
         sessionId: null,
       }));
@@ -354,21 +381,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const refreshCases = useCallback(async () => {
     if (demoMode) return;
     try {
-      const [cases, remarks] = await Promise.all([
-        supabase.from("cases").select("*").order("created_at", { ascending: false }).limit(2000),
-        supabase.from("case_remarks").select("*").order("created_at"),
-      ]);
-      const error = cases.error ?? remarks.error;
-      if (error) {
-        setCaseLoadError(error.message);
-        console.error("Failed to refresh live registration cases", error);
-        toast.error(L("লাইভ আবেদন হালনাগাদ করা যায়নি", "Could not refresh live applications"));
-        return;
-      }
+      const [cases, remarks] = await Promise.all([fetchAllCases(), fetchAllRemarks()]);
       setCaseLoadError(null);
       setState((current) => ({
         ...current,
-        cases: (cases.data ?? []).map((item) => mapCase(item, remarks.data ?? [])),
+        cases: cases.map((item) => mapCase(item, remarks)),
       }));
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
@@ -729,7 +746,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ...c.fileMetadata?.[index],
           })),
         };
-        setState((current) => ({ ...current, cases: [localCase, ...current.cases] }));
+        const sharedCases = [
+          localCase,
+          ...readMasterRegCases(state.cases).filter((item) => item.id !== localCase.id),
+        ];
+        if (!writeMasterRegCases(sharedCases)) {
+          return L("স্থানীয় আবেদনটি সংরক্ষণ করা যায়নি", "Could not save the local application");
+        }
+        setState((current) => ({ ...current, cases: sharedCases }));
         if (localCase.type === "birth" && localCase.parentMobile) {
           setEpiVisits((current) =>
             current.map((visit) =>
@@ -997,6 +1021,15 @@ export function useApp() {
 }
 
 /** Client-side mirror of the database's row-level isolation rules. */
+export function casesForStation(cases: RegCase[], upazilaId: string, stationId: string) {
+  return cases.filter(
+    (item) =>
+      item.upazilaId === upazilaId &&
+      (item.stationId ?? item.unionId) === stationId &&
+      item.unionId === stationId,
+  );
+}
+
 export function scopedCases(state: AppState, u: User | null) {
   if (!u) return [];
   if (u.role === "super") return state.cases;

@@ -55,6 +55,18 @@ export function ModuleNavigation() {
             {L(item.labelBn, item.labelEn)}
           </Link>
         ))}
+      {user.role === "admin" && (
+        <Link
+          to="/worker-applications/$type"
+          params={{ type: "birth" }}
+          activeOptions={{ exact: true }}
+          activeProps={{ className: "bg-emerald-800 text-white" }}
+          inactiveProps={{ className: "text-emerald-950 hover:bg-emerald-50" }}
+          className="min-h-10 shrink-0 rounded-lg px-3 py-2 text-sm font-semibold transition-colors"
+        >
+          {L("জন্ম নিবন্ধনের আবেদন তালিকা", "Birth registration applications")}
+        </Link>
+      )}
     </nav>
   );
 }

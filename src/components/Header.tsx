@@ -92,9 +92,14 @@ export function Header() {
             ? "up_official"
             : undefined
     : undefined;
-  const pathRole = location.pathname.startsWith("/worker-applications/") ||
-    location.pathname === "/birth-entry" ||
-    location.pathname === "/death-entry"
+  const isApplicationListPath = location.pathname.startsWith("/worker-applications/");
+  const pathRole = isApplicationListPath
+    ? user?.role === "admin"
+      ? "up_official"
+      : selectedPreviewRole === "up_secretary"
+        ? "up_secretary"
+        : "health_worker"
+    : location.pathname === "/birth-entry" || location.pathname === "/death-entry"
       ? "health_worker"
       : location.pathname === "/monitoring"
         ? "uno"

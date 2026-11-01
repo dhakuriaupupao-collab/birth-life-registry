@@ -27,6 +27,7 @@ import { Route as UnionMasterRouteImport } from './routes/union-master'
 import { Route as DashboardSectionRouteImport } from './routes/dashboard.$section'
 import { Route as MonitoringUnionDetailsRouteImport } from './routes/monitoring_.union-details'
 import { Route as WorkerApplicationsTypeRouteImport } from './routes/worker-applications.$type'
+import { Route as Worker_applicationsTypeRouteImport } from './routes/worker_applications.$type'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -118,6 +119,11 @@ const WorkerApplicationsTypeRoute = WorkerApplicationsTypeRouteImport.update({
   path: '/worker-applications/$type',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Worker_applicationsTypeRoute = Worker_applicationsTypeRouteImport.update({
+  id: '/worker_applications/$type',
+  path: '/worker_applications/$type',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/$section': typeof DashboardSectionRoute
   '/monitoring/union-details': typeof MonitoringUnionDetailsRoute
   '/worker-applications/$type': typeof WorkerApplicationsTypeRoute
+  '/worker_applications/$type': typeof Worker_applicationsTypeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/dashboard/$section': typeof DashboardSectionRoute
   '/monitoring/union-details': typeof MonitoringUnionDetailsRoute
   '/worker-applications/$type': typeof WorkerApplicationsTypeRoute
+  '/worker_applications/$type': typeof Worker_applicationsTypeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -179,6 +187,7 @@ export interface FileRoutesById {
   '/dashboard/$section': typeof DashboardSectionRoute
   '/monitoring_/union-details': typeof MonitoringUnionDetailsRoute
   '/worker-applications/$type': typeof WorkerApplicationsTypeRoute
+  '/worker_applications/$type': typeof Worker_applicationsTypeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -201,6 +210,7 @@ export interface FileRouteTypes {
     | '/dashboard/$section'
     | '/monitoring/union-details'
     | '/worker-applications/$type'
+    | '/worker_applications/$type'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -221,6 +231,7 @@ export interface FileRouteTypes {
     | '/dashboard/$section'
     | '/monitoring/union-details'
     | '/worker-applications/$type'
+    | '/worker_applications/$type'
   id:
     | '__root__'
     | '/'
@@ -241,6 +252,7 @@ export interface FileRouteTypes {
     | '/dashboard/$section'
     | '/monitoring_/union-details'
     | '/worker-applications/$type'
+    | '/worker_applications/$type'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -261,6 +273,7 @@ export interface RootRouteChildren {
   UnionMasterRoute: typeof UnionMasterRoute
   MonitoringUnionDetailsRoute: typeof MonitoringUnionDetailsRoute
   WorkerApplicationsTypeRoute: typeof WorkerApplicationsTypeRoute
+  Worker_applicationsTypeRoute: typeof Worker_applicationsTypeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -391,6 +404,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkerApplicationsTypeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/worker_applications/$type': {
+      id: '/worker_applications/$type'
+      path: '/worker_applications/$type'
+      fullPath: '/worker_applications/$type'
+      preLoaderRoute: typeof Worker_applicationsTypeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -424,6 +444,7 @@ const rootRouteChildren: RootRouteChildren = {
   UnionMasterRoute: UnionMasterRoute,
   MonitoringUnionDetailsRoute: MonitoringUnionDetailsRoute,
   WorkerApplicationsTypeRoute: WorkerApplicationsTypeRoute,
+  Worker_applicationsTypeRoute: Worker_applicationsTypeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

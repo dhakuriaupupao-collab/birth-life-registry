@@ -1,0 +1,23 @@
+{
+  "name": "ই-নিবন্ধন ট্র্যাকার",
+  "short_name": "ই-নিবন্ধন",
+  "description": "জন্ম ও মৃত্যু নিবন্ধন ট্র্যাকার",
+  "lang": "bn",
+  "theme_color": "#16a34a",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "start_url": "/",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

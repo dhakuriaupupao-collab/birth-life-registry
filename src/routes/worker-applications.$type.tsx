@@ -3,7 +3,7 @@ import { DashboardGate } from "@/components/dashboards/DashboardGate";
 import { WorkerApplicationListPage } from "@/components/modules/WorkerApplicationListPage";
 import { BirthRegList } from "@/components/modules/BirthRegList";
 import { DeathRegList } from "@/components/modules/DeathRegList";
-import { useApp } from "@/lib/store";
+import { casesForStation, scopedCases, useApp } from "@/lib/store";
 import { AdministrativeErrorBoundary } from "@/components/AdministrativeErrorBoundary";
 import { Button } from "@/components/ui/button";
 
@@ -20,15 +20,23 @@ export const Route = createFileRoute("/worker-applications/$type")({
 
 function WorkerApplicationsRoute() {
   const { type } = Route.useParams();
-  const { user, state, activeUnionId, caseLoadError, refresh, L } = useApp();
+  const search = Route.useSearch();
+  const { user, state, activeUnionId, demoMode, caseLoadError, refresh, L } = useApp();
   const registrationType = type === "birth" || type === "death" ? type : null;
-  const unionId = activeUnionId ?? user?.unionId;
-  const administrativeCases = unionId
-    ? state.cases.filter((item) => item.unionId === unionId)
-    : state.cases;
+  const administrativeCases =
+    user?.role === "admin"
+      ? demoMode
+        ? casesForStation(
+            state.cases,
+            "manirampur",
+            activeUnionId ?? user.stationId ?? user.unionId ?? "mn-dhakuria",
+          )
+        : scopedCases(state, user)
+      : [];
+  const previewRole = search.role === "up_secretary" ? "admin" : "worker";
   return (
     <AdministrativeErrorBoundary>
-      <DashboardGate workerLayout={false} developmentPreviewRole="worker">
+      <DashboardGate workerLayout={false} developmentPreviewRole={previewRole}>
         {caseLoadError ? (
           <section className="mx-auto my-8 max-w-lg rounded-xl border border-amber-200 bg-amber-50 p-6 text-center text-amber-950" role="alert">
             <h1 className="font-display text-lg font-bold">{L("আবেদন তালিকা লোড করা যায়নি", "Applications could not be loaded")}</h1>

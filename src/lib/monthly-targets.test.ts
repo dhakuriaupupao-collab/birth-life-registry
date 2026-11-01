@@ -60,6 +60,24 @@ describe("union monthly target helpers", () => {
       },
       {
         ...base,
+        id: "submitted-last-moment-of-month",
+        upazilaId: "manirampur",
+        stationId: "mn-dhakuria",
+        unionId: "mn-dhakuria",
+        createdAt: Date.parse("2026-10-31T23:59:59+06:00"),
+        status: "pending" as const,
+      },
+      {
+        ...base,
+        id: "submitted-first-moment-of-next-month",
+        upazilaId: "manirampur",
+        stationId: "mn-dhakuria",
+        unionId: "mn-dhakuria",
+        createdAt: Date.parse("2026-11-01T00:00:00+06:00"),
+        status: "pending" as const,
+      },
+      {
+        ...base,
         id: "completed-this-month",
         upazilaId: "manirampur",
         stationId: "mn-dhakuria",
@@ -82,7 +100,7 @@ describe("union monthly target helpers", () => {
     expect(
       getMonthlyStationCaseCounts(cases, "manirampur", "mn-dhakuria", "2026-10-01"),
     ).toEqual({
-      birth: { pending: 1, progress: 1, completed: 1, total: 2 },
+      birth: { pending: 2, progress: 1, completed: 1, total: 3 },
       death: { pending: 0, progress: 0, completed: 0, total: 0 },
     });
   });

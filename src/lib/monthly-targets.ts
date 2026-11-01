@@ -25,11 +25,9 @@ export function getMonthlyStationCaseCounts(
     death: { pending: 0, progress: 0, completed: 0, total: 0 },
   };
   const monthStart = new Date(`${monthYear.slice(0, 7)}-01T00:00:00+06:00`).getTime();
-  const monthEnd = new Date(
-    `${monthYear.slice(0, 7)}-01T00:00:00+06:00`,
-  );
-  monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
-  const monthEndTime = monthEnd.getTime();
+  const year = Number(monthYear.slice(0, 4));
+  const month = Number(monthYear.slice(5, 7));
+  const monthEndTime = Date.UTC(year, month, 1) - 6 * 60 * 60 * 1000;
 
   for (const item of cases) {
     if (

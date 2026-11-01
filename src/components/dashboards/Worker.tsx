@@ -169,123 +169,6 @@ function isValidIsoDate(value: string) {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-function toBengaliDigits(value: number | string) {
-  return String(value).replace(/\d/g, (digit) => "০১২৩৪৫৬৭৮৯".charAt(Number(digit)));
-}
-
-function DateDropdowns({
-  value,
-  onChange,
-  ariaLabel,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  ariaLabel: string;
-}) {
-  const normalizedValue = normalizeBengaliDigits(value);
-  const match = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(normalizedValue);
-  const parsedYear = match?.[1] ?? "";
-  const parsedMonth = match?.[2] ?? "";
-  const parsedDay = match?.[3] ?? "";
-  const [day, setDay] = useState(parsedDay);
-  const [month, setMonth] = useState(parsedMonth);
-  const [year, setYear] = useState(parsedYear);
-  const currentYear = new Date().getFullYear();
-  const monthNames = [
-    "জানুয়ারি", "ফেব্রুয়ারি", "মার্চ", "এপ্রিল", "মে", "জুন",
-    "জুলাই", "আগস্ট", "সেপ্টেম্বর", "অক্টোবর", "নভেম্বর", "ডিসেম্বর",
-  ];
-  const maxDay = year && month
-    ? new Date(Number(year), Number(month), 0).getDate()
-    : 31;
-
-  useEffect(() => {
-    setDay(parsedDay);
-    setMonth(parsedMonth);
-    setYear(parsedYear);
-  }, [parsedDay, parsedMonth, parsedYear]);
-
-  const updateParts = (nextDay: string, nextMonth: string, nextYear: string) => {
-    if (nextDay && nextMonth && nextYear) {
-      const nextMaxDay = new Date(Number(nextYear), Number(nextMonth), 0).getDate();
-      if (Number(nextDay) > nextMaxDay) {
-        setDay("");
-        onChange("");
-        return;
-      }
-      onChange(`${nextYear}-${nextMonth}-${nextDay}`);
-    } else {
-      onChange("");
-    }
-  };
-
-  const setDayPart = (nextDay: string) => {
-    setDay(nextDay);
-    updateParts(nextDay, month, year);
-  };
-  const setMonthPart = (nextMonth: string) => {
-    setMonth(nextMonth);
-    const nextMaxDay = year
-      ? new Date(Number(year), Number(nextMonth), 0).getDate()
-      : 31;
-    const nextDay = day && Number(day) <= nextMaxDay ? day : "";
-    if (nextDay !== day) setDay(nextDay);
-    updateParts(nextDay, nextMonth, year);
-  };
-  const setYearPart = (nextYear: string) => {
-    setYear(nextYear);
-    const nextMaxDay = month
-      ? new Date(Number(nextYear), Number(month), 0).getDate()
-      : 31;
-    const nextDay = day && Number(day) <= nextMaxDay ? day : "";
-    if (nextDay !== day) setDay(nextDay);
-    updateParts(nextDay, month, nextYear);
-  };
-
-  return (
-    <div className="grid min-w-0 grid-cols-3 gap-1.5 sm:gap-2" aria-label={ariaLabel}>
-      <select
-        className="h-11 min-w-0 rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-        aria-label={`দিন / Day for ${ariaLabel}`}
-        value={day}
-        onChange={(event) => setDayPart(event.target.value)}
-        required
-      >
-        <option value="">দিন</option>
-        {Array.from({ length: maxDay }, (_, index) => {
-          const valueDay = String(index + 1).padStart(2, "0");
-          return <option key={valueDay} value={valueDay}>{toBengaliDigits(index + 1)}</option>;
-        })}
-      </select>
-      <select
-        className="h-11 min-w-0 rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-        aria-label={`মাস / Month for ${ariaLabel}`}
-        value={month}
-        onChange={(event) => setMonthPart(event.target.value)}
-        required
-      >
-        <option value="">মাস</option>
-        {monthNames.map((name, index) => {
-          const valueMonth = String(index + 1).padStart(2, "0");
-          return <option key={valueMonth} value={valueMonth}>{name}</option>;
-        })}
-      </select>
-      <select
-        className="h-11 min-w-0 rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-        aria-label={`বছর / Year for ${ariaLabel}`}
-        value={year}
-        onChange={(event) => setYearPart(event.target.value)}
-        required
-      >
-        <option value="">বছর</option>
-        {Array.from({ length: 121 }, (_, index) => currentYear - index).map((valueYear) => (
-          <option key={valueYear} value={valueYear}>{toBengaliDigits(valueYear)}</option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
 function captureCoordinates(): Promise<{ latitude: number; longitude: number }> {
   if (!navigator.geolocation) {
     return Promise.reject(new Error("এই ডিভাইসে GPS পাওয়া যায়নি"));
@@ -307,6 +190,7 @@ function FormRow({
   inline = false,
   inlineProminent = false,
   inlineLarger = false,
+  stacked = false,
   labelAccessory,
   children,
 }: {
@@ -317,12 +201,29 @@ function FormRow({
   inline?: boolean;
   inlineProminent?: boolean;
   inlineLarger?: boolean;
+  stacked?: boolean;
   labelAccessory?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <div className={inlineProminent ? "grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-1" : inline ? "flex min-w-0 flex-row items-center gap-1" : compact ? "grid min-w-0 gap-1 lg:grid-cols-[8rem_minmax(0,1fr)] lg:items-center lg:gap-2" : "grid gap-2 sm:grid-cols-[12rem_minmax(0,1fr)] sm:items-start sm:gap-4"}>
-      <div className={`flex items-start ${inline ? "shrink-0" : ""} ${labelAccessory ? "gap-2" : ""} ${compact ? "lg:pt-0" : "pt-2"}`}>
+    <div
+      className={
+        stacked
+          ? "grid min-w-0 gap-1"
+          : inlineProminent
+            ? "grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-1"
+            : inline
+              ? "flex min-w-0 flex-row items-center gap-1"
+              : compact
+                ? "grid min-w-0 gap-1 lg:grid-cols-[8rem_minmax(0,1fr)] lg:items-center lg:gap-2"
+                : "grid gap-2 sm:grid-cols-[12rem_minmax(0,1fr)] sm:items-start sm:gap-4"
+      }
+    >
+      <div
+        className={`flex items-start ${inline ? "shrink-0" : ""} ${labelAccessory ? "gap-2" : ""} ${
+          stacked ? "" : compact ? "lg:pt-0" : "pt-2"
+        }`}
+      >
         {labelAccessory}
         <div className={inline ? "min-w-0 whitespace-nowrap" : "min-w-0"}>
           <p className={`${inline ? inlineProminent ? "text-base font-medium" : inlineLarger ? "text-lg font-semibold" : "text-xs font-bold" : compact ? "text-base font-bold" : "text-sm font-bold"} text-slate-800`}>
@@ -943,6 +844,35 @@ export function RegForm({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
+    const parseDateInput = (value: string): string | undefined => {
+      const normalized = value
+        .replace(/[০-৯]/g, (digit) =>
+          String("০১২৩৪৫৬৭৮৯".indexOf(digit)),
+        )
+        .trim();
+      const parts = normalized.split(/[./-]/);
+      if (parts.length !== 3) return undefined;
+
+      const yearFirst = parts[0]?.length === 4;
+      const year = yearFirst ? parts[0] : parts[2];
+      const month = parts[1];
+      const day = yearFirst ? parts[2] : parts[0];
+      if (
+        !year ||
+        !month ||
+        !day ||
+        !/^\d{4}$/.test(year) ||
+        !/^\d{1,2}$/.test(month) ||
+        !/^\d{1,2}$/.test(day)
+      ) {
+        return undefined;
+      }
+
+      const isoDate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+      return isValidIsoDate(isoDate) ? isoDate : undefined;
+    };
+    const submittedDob = parseDateInput(dob);
+    const submittedDod = type === "death" ? parseDateInput(dod) : undefined;
     if (!user || !union || !upazila) {
       setError(L("আপনার নির্ধারিত এলাকা পাওয়া যায়নি", "Your assigned area could not be found"));
       return;
@@ -970,8 +900,8 @@ export function RegForm({
       return;
     }
     if (
-      !isValidIsoDate(dob) ||
-      (type === "death" && (!isValidIsoDate(dod) || !cause.bn.trim()))
+      !submittedDob ||
+      (type === "death" && (!submittedDod || !cause.bn.trim()))
     ) {
       setError(
         L(
@@ -989,7 +919,7 @@ export function RegForm({
       setError(L("গ্রাম/মহল্লা নির্বাচন করুন", "Select a village/neighborhood"));
       return;
     }
-    if (dob > new Date().toISOString().slice(0, 10) || (type === "death" && (dod < dob || dod > new Date().toISOString().slice(0, 10)))) {
+    if (submittedDob > new Date().toISOString().slice(0, 10) || (submittedDod && (submittedDod < submittedDob || submittedDod > new Date().toISOString().slice(0, 10)))) {
       setError(L("তারিখ ভবিষ্যতের হতে পারবে না এবং মৃত্যুর তারিখ জন্ম তারিখের পরে হতে হবে", "Dates can't be in the future and date of death must be after date of birth"));
       return;
     }
@@ -1002,7 +932,7 @@ export function RegForm({
       (existing) =>
         existing.id !== entry?.id &&
         existing.type === type &&
-        existing.dob === dob &&
+        existing.dob === submittedDob &&
         existing.upazilaId === user.upazilaId &&
         existing.unionId === user.unionId &&
         existing.ward === (user.ward ?? 1) &&
@@ -1022,7 +952,7 @@ export function RegForm({
           const result = await checkForDuplicate({
             data: {
               type,
-              dob,
+              dob: submittedDob,
               fatherBn: father.bn,
               motherBn: mother.bn,
               ...(entry ? { excludeId: entry.id } : {}),
@@ -1088,9 +1018,9 @@ export function RegForm({
         nid,
         parentMobile: mobile,
         gender,
-        dob,
+        dob: submittedDob,
         order: type === "birth" ? order : undefined,
-        dod: type === "death" ? dod : undefined,
+        dod: submittedDod,
         cause: type === "death" ? cause : undefined,
         villageId: selectedVillage.id,
         details: {
@@ -1208,17 +1138,23 @@ export function RegForm({
       {type === "birth" ? (
         <div className="grid min-w-0 items-start gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-4">
           <div className="min-w-0 space-y-1">
-            <div className="grid min-w-0 grid-cols-2 gap-3">
-              <FormRow labelBn="জন্মতারিখ" labelEn="Date of Birth" required compact inline inlineLarger>
-                <DateDropdowns
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+              <FormRow labelBn="জন্মতারিখ" labelEn="Date of Birth" required stacked>
+                <Input
+                  className="h-11 w-full text-sm"
+                  type="text"
+                  inputMode="text"
+                  maxLength={10}
+                  placeholder="দিন/মাস/বছর (যেমন: ৩১/১০/২০২৬ বা 31/10/2026)"
+                  aria-label="জন্মতারিখ / Date of birth"
+                  required
                   value={dob}
-                  onChange={setDob}
-                  ariaLabel="জন্মতারিখ / Date of birth"
+                  onChange={(event) => setDob(event.target.value)}
                 />
               </FormRow>
-              <FormRow labelBn="কত তম সন্তান" labelEn="Child Order" required compact inline inlineLarger>
+              <FormRow labelBn="কত তম সন্তান" labelEn="Child Order" required stacked>
                 <Select value={order} onValueChange={setOrder} required>
-                  <SelectTrigger className="h-11 min-w-0 px-1.5 text-xs" aria-label="কত তম সন্তান / Child order">
+                  <SelectTrigger className="h-11 w-full min-w-0 px-3 text-sm" aria-label="কত তম সন্তান / Child order">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1293,23 +1229,23 @@ export function RegForm({
       ) : (
         <>
           <div className="min-w-0 space-y-1">
-            <div className="grid min-w-0 grid-cols-2 gap-1.5">
-              <FormRow labelBn="মৃত্যুর তারিখ" labelEn="Date of Death" required compact inline inlineProminent>
+            <div className="grid min-w-0 grid-cols-1 gap-1.5 sm:grid-cols-2">
+              <FormRow labelBn="মৃত্যুর তারিখ" labelEn="Date of Death" required stacked>
                 <Input
-                  className="h-11 w-full min-w-0 px-1 text-xs"
+                  className="h-11 w-full text-sm"
                   type="text"
-                  inputMode="numeric"
+                  inputMode="text"
                   maxLength={10}
-                  placeholder="YYYY-MM-DD"
+                  placeholder="দিন/মাস/বছর (যেমন: ৩১/১০/২০২৬ বা 31/10/2026)"
                   aria-label="মৃত্যুর তারিখ / Date of death"
                   required
                   value={dod}
-                  onChange={(event) => setDod(normalizeBengaliDigits(event.target.value))}
+                  onChange={(event) => setDod(event.target.value)}
                 />
               </FormRow>
-              <FormRow labelBn="কত তম সন্তান" labelEn="Child Order" required compact inline inlineProminent>
+              <FormRow labelBn="কত তম সন্তান" labelEn="Child Order" required stacked>
                 <Select value={order} onValueChange={setOrder} required>
-                  <SelectTrigger className="h-14 w-full min-w-0 px-3 py-2.5 text-lg font-semibold" aria-label="কত তম সন্তান / Child order">
+                  <SelectTrigger className="h-11 w-full min-w-0 px-3 text-sm" aria-label="কত তম সন্তান / Child order">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1338,10 +1274,16 @@ export function RegForm({
             </FormRow>
             <BiField label="মৃত্যুর কারণ" labelEn="Cause of Death" value={cause} onChange={setCause} required compact />
             <FormRow labelBn="জন্ম তারিখ" labelEn="Date of Birth" required compact>
-              <DateDropdowns
+              <Input
+                className="h-11 w-full text-sm"
+                type="text"
+                inputMode="text"
+                maxLength={10}
+                placeholder="দিন/মাস/বছর (যেমন: ৩১/১০/২০২৬ বা 31/10/2026)"
+                aria-label="জন্মতারিখ / Date of birth"
+                required
                 value={dob}
-                onChange={setDob}
-                ariaLabel="জন্মতারিখ / Date of birth"
+                onChange={(event) => setDob(event.target.value)}
               />
             </FormRow>
             <BiField label="মৃত ব্যক্তির নাম" labelEn="Deceased Name" value={name} onChange={setName} required compact />

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { CheckCheck, Clock3, Eye, FileText, Filter, Home, Paperclip, Pencil, Printer } from "lucide-react";
+import { Camera, CheckCheck, Clock3, Eye, FileText, Filter, Home, Paperclip, Pencil, Printer } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -270,7 +270,7 @@ export function WorkerApplicationListPage({
         : L("মৃত্যু নিবন্ধনের আবেদন তালিকা", "Death Registration Applications");
 
   return (
-    <section className="mx-auto w-full max-w-none px-0 pb-2 pt-0">
+    <section className={`mx-auto w-full max-w-none px-0 pb-2 pt-0 ${administrative ? "flex min-w-0 flex-1 flex-col items-stretch" : ""}`}>
       <header className={`mb-4 flex items-center justify-between gap-4 py-3 ${administrative ? "flex-nowrap overflow-x-auto" : "flex-wrap"}`}>
         <div className="shrink-0">
           <h1 className="font-display text-xl font-bold leading-tight text-emerald-950 sm:text-2xl">
@@ -360,42 +360,67 @@ export function WorkerApplicationListPage({
         </div>
       </header>
 
-      <div className="overflow-x-auto rounded-xl border border-emerald-100 bg-white shadow-sm">
-        <table className={`w-full ${administrative ? "min-w-[1620px]" : "min-w-[1379px]"} table-fixed border-collapse text-left text-sm`}>
+      <div className={`w-full min-w-0 overflow-x-auto rounded-xl border border-emerald-100 bg-white shadow-sm ${administrative ? "flex-1" : ""}`}>
+        <table className={`w-full ${administrative ? "min-w-[1280px] 2xl:w-full 2xl:min-w-full text-base" : "min-w-[1379px] text-sm"} table-fixed border-collapse text-left`}>
           <colgroup>
-            <col className="w-[64px]" />
-            <col className="w-[120px]" />
-            <col className="w-[165px]" />
-            <col className="w-[110px]" />
-            <col className="w-[160px]" />
-            <col className="w-[160px]" />
-            <col className="w-[135px]" />
-            <col className="w-[105px]" />
-            <col className="w-[115px]" />
-            <col className="w-[94px]" />
-            <col className="w-[151px]" />
-            {administrative && <col className="w-[240px]" />}
+            {administrative ? (
+              [4.5, 8, 10, 8, 9.5, 9.5, 8.5, 5.5, 9, 10, 17.5].map((width, index) => (
+                <col key={index} style={{ width: `${width}%` }} />
+              ))
+            ) : (
+              <>
+                <col className="w-[64px]" />
+                <col className="w-[120px]" />
+                <col className="w-[165px]" />
+                <col className="w-[110px]" />
+                <col className="w-[160px]" />
+                <col className="w-[160px]" />
+                <col className="w-[135px]" />
+                <col className="w-[105px]" />
+                <col className="w-[115px]" />
+                <col className="w-[94px]" />
+                <col className="w-[151px]" />
+              </>
+            )}
           </colgroup>
           <thead className="bg-emerald-50 text-emerald-950">
             <tr>
-              {[
-                L("ক্রমিক নং", "Serial"),
-                L("আবেদন নং", "Application ID"),
-                type === "birth" ? L("শিশুর নাম", "Child's name") : L("নাম", "Name"),
-                type === "birth" ? L("জন্ম তারিখ", "Date of birth") : L("মৃত্যুর তারিখ", "Date of death"),
-                L("পিতার নাম", "Father's name"),
-                L("মাতার নাম", "Mother's name"),
-                L("গ্রাম / এলাকা", "Village / area"),
-                L("সংযুক্তি", "Attachments"),
-                L("অবস্থা", "Status"),
-                L("কার্যক্রম", "Action"),
-                administrative ?                 L("নিবন্ধিত করুন", "Mark registered") : user?.role === "police" ? L("পুলিশি কাজ", "Police task") : L("সংশোধন করুন", "Correction"),
-                ...(administrative ? [L("প্রশাসনিক কার্যক্রম", "Administrative actions")] : []),
-              ].map((heading, index) => (
+              {(administrative
+                ? [
+                    L("ক্রমিক নং", "SL"),
+                    L("আবেদন নং", "Application No"),
+                    type === "birth" ? L("শিশুর নাম", "Child's name") : L("মৃত ব্যক্তির নাম", "Deceased person's name"),
+                    type === "birth" ? L("জন্মের তারিখ", "Date of birth") : L("মৃত্যুর তারিখ", "Date of death"),
+                    L("পিতার নাম", "Father's name"),
+                    L("মাতার নাম", "Mother's name"),
+                    L("গ্রাম / এলাকা", "Village / area"),
+                    L("সংযুক্তি", "Attachments"),
+                    L("ছবি আপলোড", "Photo upload"),
+                    L("নিবন্ধন", "Registration"),
+                    L("প্রশাসনিক কার্যক্রম", "Administrative actions"),
+                  ]
+                : [
+                    L("ক্রমিক নং", "Serial"),
+                    L("আবেদন নং", "Application ID"),
+                    type === "birth" ? L("শিশুর নাম", "Child's name") : L("নাম", "Name"),
+                    type === "birth" ? L("জন্ম তারিখ", "Date of birth") : L("মৃত্যুর তারিখ", "Date of death"),
+                    L("পিতার নাম", "Father's name"),
+                    L("মাতার নাম", "Mother's name"),
+                    L("গ্রাম / এলাকা", "Village / area"),
+                    L("সংযুক্তি", "Attachments"),
+                    L("অবস্থা", "Status"),
+                    L("কার্যক্রম", "Action"),
+                    user?.role === "police" ? L("পুলিশি কাজ", "Police task") : L("সংশোধন করুন", "Correction"),
+                  ]
+              ).map((heading, index) => (
                 <th
                   key={heading}
                   scope="col"
-                  className={`whitespace-nowrap border-b border-emerald-100 py-2.5 font-semibold ${index === 9 ? "px-1" : index === 10 ? "px-1.5 text-center" : "px-2.5"}`}
+                  className={`whitespace-nowrap border-b border-emerald-100 ${
+                    administrative ? "px-2 py-2.5 2xl:px-3" : "px-2.5 py-2.5"
+                  } font-semibold ${administrative && (index === 8 || index === 9) ? "text-center" : ""} ${
+                    administrative && index === 0 ? "text-center" : ""
+                  }`}
                 >
                   {heading}
                 </th>
@@ -421,6 +446,7 @@ export function WorkerApplicationListPage({
                 canEdit={user?.role === "worker"}
                 administrativeActions={administrative?.actions(item, () => setSelectedAttachments(item))}
                 {...(administrative ? { onRegister: () => administrative.onRegister(item) } : {})}
+                isAdministrative={Boolean(administrative)}
                 villageName={(() => {
                   const village = findVillage(item.villageId);
                   if (village) return L(village.v.bn, village.v.en);
@@ -436,7 +462,7 @@ export function WorkerApplicationListPage({
             ))}
             {!visible.length && (
               <tr>
-                <td colSpan={administrative ? 12 : 11} className="px-3 py-10 text-center text-muted-foreground">
+                <td colSpan={11} className={`px-3 py-10 text-center text-muted-foreground ${administrative ? "text-lg" : "text-base"}`}>
                   {L("কোনো আবেদন পাওয়া যায়নি", "No applications found")}
                 </td>
               </tr>
@@ -452,7 +478,7 @@ export function WorkerApplicationListPage({
             `Showing ${n(first)} to ${n(last)} of ${n(applications.length)} applications`,
           )}
         </span>
-        <div className="flex items-center gap-2">
+        <div className={`flex items-center gap-2 ${administrative ? "mr-12" : ""}`}>
           <Button
             variant="outline"
             size="sm"
@@ -782,6 +808,7 @@ function ApplicationRow({
   administrativeActions,
   onRegister,
   canEdit,
+  isAdministrative = false,
 }: {
   item: RegCase;
   serial: number;
@@ -795,36 +822,39 @@ function ApplicationRow({
   administrativeActions?: ReactNode;
   onRegister?: () => void;
   canEdit: boolean;
+  isAdministrative?: boolean;
 }) {
+  const cellTextSize = isAdministrative ? "text-lg" : "text-base";
+
   return (
     <>
       <tr className="border-b border-slate-100 odd:bg-slate-50 even:bg-white">
-        <td className="px-2.5 py-1.5 text-base tabular-nums">{n(serial)}</td>
-        <td className="whitespace-nowrap px-2.5 py-1.5 font-mono text-base">
+        <td className={`${isAdministrative ? "px-2 2xl:px-3" : "px-2.5"} py-1.5 ${cellTextSize} tabular-nums ${isAdministrative ? "text-center" : ""}`}>{n(serial)}</td>
+        <td className={`whitespace-nowrap ${isAdministrative ? "px-2 2xl:px-3" : "px-2.5"} py-1.5 font-mono ${cellTextSize}`}>
           {item.id.slice(0, 8).toUpperCase()}
         </td>
         <td
-          className="truncate px-2.5 py-1.5 text-base font-semibold"
+          className={`truncate ${isAdministrative ? "px-2 2xl:px-3" : "px-2.5"} py-1.5 ${cellTextSize} font-semibold`}
           title={L(item.name.bn, item.name.en)}
         >
           {L(item.name.bn, item.name.en)}
         </td>
-        <td className="whitespace-nowrap px-2.5 py-1.5 text-base">
+        <td className={`whitespace-nowrap ${isAdministrative ? "px-2 2xl:px-3" : "px-2.5"} py-1.5 ${cellTextSize}`}>
           {date(Date.parse(item.type === "death" ? item.dod ?? item.dob : item.dob))}
         </td>
-        <td className="truncate px-2.5 py-1.5 text-base" title={L(item.father.bn, item.father.en)}>
+        <td className={`truncate ${isAdministrative ? "px-2 2xl:px-3" : "px-2.5"} py-1.5 ${cellTextSize}`} title={L(item.father.bn, item.father.en)}>
           {L(item.father.bn, item.father.en)}
         </td>
-        <td className="truncate px-2.5 py-1.5 text-base" title={L(item.mother.bn, item.mother.en)}>
+        <td className={`truncate ${isAdministrative ? "px-2 2xl:px-3" : "px-2.5"} py-1.5 ${cellTextSize}`} title={L(item.mother.bn, item.mother.en)}>
           {L(item.mother.bn, item.mother.en)}
         </td>
-        <td className="max-w-36 truncate px-2.5 py-1.5 text-base" title={villageName}>
+        <td className={`max-w-36 truncate ${isAdministrative ? "px-2 2xl:px-3" : "px-2.5"} py-1.5 ${cellTextSize}`} title={villageName}>
           {villageName}
         </td>
-        <td className="whitespace-nowrap px-2.5 py-1.5 text-base">
+        <td className={`whitespace-nowrap ${isAdministrative ? "px-2 2xl:px-3 text-center" : "px-2.5"} py-1.5 ${cellTextSize}`}>
           <button
             type="button"
-            className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+            className={`inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 ${isAdministrative ? "text-base" : "text-sm"} font-medium text-emerald-800 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700`}
             onClick={onAttachments}
             aria-label={L(
               `${n(item.files.length)}টি সংযুক্তি দেখুন`,
@@ -836,22 +866,41 @@ function ApplicationRow({
             {n(item.files.length)}
           </button>
         </td>
-        <td className="whitespace-nowrap px-2.5 py-1.5 text-base">
-          <StatusBadge s={item.status} />
-        </td>
-        <td className="px-1 py-1.5 text-base">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="whitespace-nowrap border-emerald-200 text-emerald-900 hover:bg-emerald-50"
-            onClick={onView}
-          >
-            <Eye className="mr-1 h-4 w-4" aria-hidden="true" />
-            {L("দেখুন", "View")}
-          </Button>
-        </td>
-        <td className="px-1 py-1.5 text-center text-base">
+        {isAdministrative ? (
+          <td className="px-2 py-1.5 text-center 2xl:px-3">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="whitespace-nowrap border-emerald-200 text-emerald-900 hover:bg-emerald-50"
+              onClick={onEdit}
+              disabled={item.status === "completed" || item.status === "rejected"}
+              title={L("আবেদন সম্পাদনা করে ছবি বা নথি আপলোড করুন", "Edit the application to upload photos or documents")}
+            >
+              <Camera className="mr-1 h-4 w-4" aria-hidden="true" />
+              {L("ছবি আপলোড", "Upload photo")}
+            </Button>
+          </td>
+        ) : (
+          <>
+            <td className="whitespace-nowrap px-2.5 py-1.5 text-base">
+              <StatusBadge s={item.status} />
+            </td>
+            <td className="px-1 py-1.5 text-base">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="whitespace-nowrap border-emerald-200 text-emerald-900 hover:bg-emerald-50"
+                onClick={onView}
+              >
+                <Eye className="mr-1 h-4 w-4" aria-hidden="true" />
+                {L("দেখুন", "View")}
+              </Button>
+            </td>
+          </>
+        )}
+        <td className={`${isAdministrative ? "px-2 2xl:px-3" : "px-1"} py-1.5 text-center ${cellTextSize}`}>
           {onRegister ? (
             <Button
               type="button"
@@ -903,7 +952,13 @@ function ApplicationRow({
           )}
         </td>
         {administrativeActions !== undefined && (
-          <td className="whitespace-nowrap px-2 py-1.5 text-base">{administrativeActions}</td>
+          <td className={`whitespace-nowrap ${isAdministrative ? "px-2 2xl:px-3" : "px-2"} py-1.5 ${cellTextSize}`}>
+            {isAdministrative ? (
+              <div className="flex justify-center">{administrativeActions}</div>
+            ) : (
+              administrativeActions
+            )}
+          </td>
         )}
       </tr>
     </>
