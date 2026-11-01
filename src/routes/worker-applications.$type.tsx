@@ -33,7 +33,7 @@ function WorkerApplicationsRoute() {
           )
         : scopedCases(state, user)
       : [];
-  const previewRole = search.role === "up_secretary" ? "admin" : "worker";
+  const previewRole = search["role"] === "up_secretary" ? "admin" : "worker";
   return (
     <AdministrativeErrorBoundary>
       <DashboardGate workerLayout={false} developmentPreviewRole={previewRole}>

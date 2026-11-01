@@ -5,7 +5,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { scopedCases, useApp } from "@/lib/store";
 import { PageTitle, useCaseHelpers } from "../shared";
 import { UnifiedStationDashboardTop } from "./UnifiedStationDashboardTop";
-import { AssignedUnionHeader } from "./AssignedUnionHeader";
 
 export function PoliceDashboard() {
   const { L, n, user, state, patchCase, demoMode, activeUnionId } = useApp();
@@ -21,8 +20,7 @@ export function PoliceDashboard() {
   return (
     <>
       <div className="mx-auto mb-6 max-w-6xl">
-        {stationId && user && <AssignedUnionHeader stationId={stationId} upazilaId={user.upazilaId} />}
-        <UnifiedStationDashboardTop showAssignedUnionHeader={false} />
+        <UnifiedStationDashboardTop headerStationId={stationId} />
       </div>
       <div className="mx-auto max-w-xl">
         <PageTitle title={L("আমার বাড়ির তালিকা", "My Assigned Houses")} sub={L(`ওয়ার্ড ${n(user!.ward ?? 1)} · বাকি ${n(open.length)}টি`, `Ward ${user!.ward} · ${open.length} remaining`)} />

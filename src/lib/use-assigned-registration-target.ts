@@ -12,6 +12,11 @@ export type CaseCounts = {
 };
 
 export type StationMonthlyMetrics = {
+  assignment: {
+    userId: string;
+    upazilaId: string;
+    stationId: string;
+  };
   target: {
     unionId: string;
     monthYear: string;
@@ -60,6 +65,11 @@ export function useAssignedRegistrationTarget(): StationMonthlyMetrics | null {
             total: row.death_total_count,
           };
           setMetrics({
+            assignment: {
+              userId: user.id,
+              upazilaId: user.upazilaId,
+              stationId,
+            },
             target: row.target_present ? {
               unionId: stationId,
               monthYear,
@@ -71,6 +81,7 @@ export function useAssignedRegistrationTarget(): StationMonthlyMetrics | null {
         }
       } catch (error) {
         if (!active) return;
+        setMetrics(null);
         console.error("Failed to load station monthly metrics", error);
         toast.error(L("স্টেশনের মাসিক পরিসংখ্যান লোড করা যায়নি", "Could not load station monthly metrics"));
       }
@@ -129,5 +140,17 @@ export function useAssignedRegistrationTarget(): StationMonthlyMetrics | null {
     };
   }, [L, demoMode, user]);
 
+  const stationId = user?.stationId ?? user?.unionId;
+  if (
+    !user ||
+    !["admin", "worker", "police"].includes(user.role) ||
+    !stationId ||
+    demoMode ||
+    metrics?.assignment.userId !== user.id ||
+    metrics.assignment.upazilaId !== user.upazilaId ||
+    metrics.assignment.stationId !== stationId
+  ) {
+    return null;
+  }
   return metrics;
 }

@@ -35,9 +35,9 @@ export const Route = createFileRoute("/")({
   }),
   head: () => ({
     meta: [
-      { title: "National E-Registration Tracker — Birth & Death Registration" },
+      { title: "ই-নিবন্ধন ট্র্যাকার | ৩৬৫ দিনের মধ্যে জন্ম ও মৃত্যু নিবন্ধন সহায়তা" },
       { name: "description", content: "A national view of administrative progress in birth and death registration." },
-      { property: "og:title", content: "National E-Registration Tracker" },
+      { property: "og:title", content: "ই-নিবন্ধন ট্র্যাকার | ৩৬৫ দিনের মধ্যে জন্ম ও মৃত্যু নিবন্ধন সহায়তা" },
       { property: "og:description", content: "A national view of administrative progress in birth and death registration." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

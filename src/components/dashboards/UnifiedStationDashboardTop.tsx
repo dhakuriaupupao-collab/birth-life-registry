@@ -8,13 +8,19 @@ import { AssignedUnionHeader } from "./AssignedUnionHeader";
 
 export function UnifiedStationDashboardTop({
   stationId: stationIdProp,
+  headerStationId,
   showAssignedUnionHeader = true,
 }: {
   stationId?: string | undefined;
+  headerStationId?: string | undefined;
   showAssignedUnionHeader?: boolean;
 }) {
   const { L, state, user } = useApp();
-  const stationId = stationIdProp ?? user?.stationId ?? user?.unionId;
+  const isAssignedUnionView =
+    user?.role === "admin" || user?.role === "worker" || user?.role === "police";
+  const stationId = isAssignedUnionView
+    ? user.stationId ?? user.unionId
+    : stationIdProp ?? user?.stationId ?? user?.unionId;
   const location = stationId
     ? state.upazilas
         .map((upazila) => ({
@@ -31,26 +37,28 @@ export function UnifiedStationDashboardTop({
     );
   }, [location?.upazila.id, state.cases, stationId]);
 
-  const isAssignedUnionView =
-    !stationIdProp &&
-    (user?.role === "admin" || user?.role === "worker" || user?.role === "police");
-  const counts = useMemo<MonthlyProgressCounts>(
-    () =>
-      getMonthlyStationCaseCounts(
+  const counts = useMemo<MonthlyProgressCounts | undefined>(
+    () => {
+      if (isAssignedUnionView) return undefined;
+      return getMonthlyStationCaseCounts(
         unifiedCases,
         location?.upazila.id ?? "",
         stationId ?? "",
         getDhakaMonthYear(),
-      ),
-    [location?.upazila.id, stationId, unifiedCases],
+      );
+    },
+    [isAssignedUnionView, location?.upazila.id, stationId, unifiedCases],
   );
-  const received = (counts.birth.total ?? 0) + (counts.death.total ?? 0);
+  const received = counts
+    ? (counts.birth.total ?? 0) + (counts.death.total ?? 0)
+    : 0;
+  const displayedHeaderStationId = headerStationId ?? stationId;
 
   return (
     <div className="grid min-h-0 gap-1 sm:gap-2 lg:grid-cols-[0.72fr_1.28fr] lg:items-center lg:gap-3">
       <div className="flex min-h-0 flex-col justify-center">
-        {showAssignedUnionHeader && stationId && location && (
-          <AssignedUnionHeader stationId={stationId} upazilaId={location.upazila.id} />
+        {showAssignedUnionHeader && displayedHeaderStationId && (
+          <AssignedUnionHeader stationId={displayedHeaderStationId} />
         )}
         <h1 id="e-registration-tracker" className="max-w-3xl scroll-mt-24 font-display text-2xl font-bold leading-tight tracking-tight text-[#102a43] max-[360px]:text-xl sm:text-3xl lg:text-4xl">
           ই-নিবন্ধন ট্র্যাকার
@@ -67,7 +75,7 @@ export function UnifiedStationDashboardTop({
       </div>
       {isAssignedUnionView ? (
         <AssignedUnionProgressCard />
-      ) : (
+      ) : counts ? (
         <MonthlyProgressCard
           counts={counts}
           received={received}
@@ -76,7 +84,7 @@ export function UnifiedStationDashboardTop({
           reportsEnabled
           featured
         />
-      )}
+      ) : null}
     </div>
   );
 }
